@@ -70,6 +70,46 @@ Derivative propagate_adjoints(const Func &output,
  */
 Derivative propagate_adjoints(const Func &output);
 
+/**
+ *  Forward-mode automatic differentiation (JVP): compute d(output)/d(param).
+ *  Returns a Func with the same dimensionality and Tuple width as output,
+ *  representing the derivative of each output element w.r.t. the given Param.
+ *
+ *  This is efficient when the output is high-dimensional (e.g., an image)
+ *  and the parameter is scalar -- the inverse/differential rendering use case.
+ *  For high-dimensional parameter spaces with a scalar loss function, use
+ *  propagate_adjoints() (reverse-mode) instead.
+ *
+ *  The returned Func is an ordinary Halide Func and can be scheduled freely.
+ *  Its default scheduling (compute_inline) uses zero extra memory -- tangent
+ *  expressions are fused into the consumer's computation.
+ */
+Func propagate_tangents(const Func &output, const Param<> &param);
+
+/**
+ *  Forward-mode JVP w.r.t. a Buffer/ImageParam along a tangent direction.
+ *  tangent_input has the same dimensions as the buffer and specifies the
+ *  direction to differentiate along (a vector in the parameter space).
+ *  Result: d(output) = J * tangent_input  (Jacobian-vector product).
+ *
+ *  For the full Jacobian of output w.r.t. the buffer, call once per basis
+ *  vector (expensive for large buffers). To optimize a buffer via gradient
+ *  descent, prefer propagate_adjoints() + scalar loss (reverse-mode).
+ */
+Func propagate_tangents(const Func &output,
+                        const Buffer<> &buffer_param,
+                        const Func &tangent_input);
+
+/**
+ *  Forward-mode JVP w.r.t. multiple inputs simultaneously.
+ *  tangent_inputs maps input names (Param or Buffer names) to their tangent
+ *  Funcs. For scalar Params, use a 0-dimensional Func returning 1.0f.
+ *  For Buffers/ImageParams, use a Func with the same dimensions returning
+ *  the tangent direction.
+ */
+Func propagate_tangents(const Func &output,
+                        const std::map<std::string, Func> &tangent_inputs);
+
 }  // namespace Halide
 
 #endif
