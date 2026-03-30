@@ -122,6 +122,7 @@ tests(GROUPS correctness
       force_onto_stack.cpp
       func_lifetime.cpp
       func_lifetime_2.cpp
+      functional_combinators.cpp
       fuse.cpp
       fuse_gpu_threads.cpp
       fused_where_inner_extent_is_zero.cpp

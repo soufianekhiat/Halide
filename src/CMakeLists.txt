@@ -123,6 +123,7 @@ target_sources(
     Float16.h
     Func.h
     Function.h
+    FunctionalCombinators.h
     FunctionPtr.h
     FuseGPUThreadLoops.h
     FuzzFloatStores.h
@@ -304,6 +305,7 @@ target_sources(
     Float16.cpp
     Func.cpp
     Function.cpp
+    FunctionalCombinators.cpp
     FuseGPUThreadLoops.cpp
     FuzzFloatStores.cpp
     Generator.cpp
