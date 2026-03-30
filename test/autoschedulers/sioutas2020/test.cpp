@@ -70,8 +70,14 @@ int main(int argc, char **argv) {
 #endif
         load_plugin(argv[1]);
 
+        // Full cost-model path (default) — uses split+.gpu() instead of gpu_tile.
         AutoschedulerParams gpu{"Sioutas2020"};
+        // CPU-only path — always uses SimpleAutoSchedule.
         AutoschedulerParams cpu{"Sioutas2020"};
+        // SimpleAutoSchedule path — legacy extent-based gpu_tile heuristic.
+        AutoschedulerParams simple_gpu{
+            "Sioutas2020",
+            {{"enable_fusion", "0"}, {"enable_cost_model", "0"}}};
 
         Var x("x"), y("y"), c("c"), i("i");
 
@@ -87,7 +93,7 @@ int main(int argc, char **argv) {
             h(x, y) = sqrt(g(x, y) * g(x, y) + 1.0f);   // non-trivial
             h.set_estimate(x, 0, 1024).set_estimate(y, 0, 1024);
 
-            auto r = Pipeline(h).apply_autoscheduler(kGPU, gpu);
+            auto r = Pipeline(h).apply_autoscheduler(kGPU, simple_gpu);
             expect_contains(r.schedule_source, "gpu_tile", "pointwise GPU");
             printf("PASS  1: pointwise GPU\n");
         }
@@ -102,7 +108,7 @@ int main(int argc, char **argv) {
                        f(x-1,y+1) + f(x,y+1) + f(x+1,y+1));
             h.set_estimate(x, 0, 2048).set_estimate(y, 0, 2048);
 
-            auto r = Pipeline(h).apply_autoscheduler(kGPU, gpu);
+            auto r = Pipeline(h).apply_autoscheduler(kGPU, simple_gpu);
             expect_contains(r.schedule_source, "gpu_tile", "stencil GPU");
             printf("PASS  2: 3×3 stencil GPU\n");
         }
@@ -117,7 +123,7 @@ int main(int argc, char **argv) {
             }
             f[N-1].set_estimate(x, 0, 2048).set_estimate(y, 0, 2048);
 
-            auto r = Pipeline(f[N-1]).apply_autoscheduler(kGPU, gpu);
+            auto r = Pipeline(f[N-1]).apply_autoscheduler(kGPU, simple_gpu);
             expect_contains(r.schedule_source, "gpu_tile", "stencil chain GPU");
             printf("PASS  3: stencil chain (6 stages) GPU\n");
         }
@@ -130,7 +136,7 @@ int main(int argc, char **argv) {
             by(x, y) = (bx(x,y-1) + bx(x,y)*2.0f + bx(x,y+1)) * 0.25f;
             by.set_estimate(x, 1, 2046).set_estimate(y, 1, 2046);
 
-            auto r = Pipeline(by).apply_autoscheduler(kGPU, gpu);
+            auto r = Pipeline(by).apply_autoscheduler(kGPU, simple_gpu);
             expect_contains(r.schedule_source, "gpu_tile", "separable blur GPU");
             printf("PASS  4: separable blur GPU\n");
         }
@@ -144,7 +150,7 @@ int main(int argc, char **argv) {
                .set_estimate(y, 0, 1080)
                .set_estimate(c, 0, 3);
 
-            auto r = Pipeline(out).apply_autoscheduler(kGPU, gpu);
+            auto r = Pipeline(out).apply_autoscheduler(kGPU, simple_gpu);
             expect_contains(r.schedule_source, "gpu_tile", "3-channel image GPU");
             printf("PASS  5: 3-channel image GPU\n");
         }
@@ -160,7 +166,7 @@ int main(int argc, char **argv) {
             f(x, y) += input(x + r.x, y + r.y);
             f.set_estimate(x, 0, 2048).set_estimate(y, 0, 2048);
 
-            auto result = Pipeline(f).apply_autoscheduler(kGPU, gpu);
+            auto result = Pipeline(f).apply_autoscheduler(kGPU, simple_gpu);
             // Both init and update tiled.
             expect_contains(result.schedule_source, "gpu_tile", "gather reduction GPU");
             printf("PASS  6: gather reduction GPU\n");
@@ -179,7 +185,7 @@ int main(int argc, char **argv) {
             f.set_estimate(x, 0, 1024).set_estimate(y, 0, 1024);
             out.set_estimate(i, 0, 256);
 
-            auto result = Pipeline(out).apply_autoscheduler(kGPU, gpu);
+            auto result = Pipeline(out).apply_autoscheduler(kGPU, simple_gpu);
             // Scatter update must fall back to single-thread on GPU.
             expect_contains(result.schedule_source, "gpu_single_thread",
                              "histogram scatter GPU");
@@ -195,7 +201,7 @@ int main(int argc, char **argv) {
             a.set_estimate(x, 0, 1024).set_estimate(y, 0, 1024);
             b.set_estimate(x, 0, 1024).set_estimate(y, 0, 1024);
 
-            auto r = Pipeline({a, b}).apply_autoscheduler(kGPU, gpu);
+            auto r = Pipeline({a, b}).apply_autoscheduler(kGPU, simple_gpu);
             expect_contains(r.schedule_source, "gpu_tile", "multi-output GPU");
             printf("PASS  8: multi-output GPU\n");
         }
@@ -207,7 +213,7 @@ int main(int argc, char **argv) {
             g(x) = f(x) + f(x + 1);
             g.set_estimate(x, 0, 65536);
 
-            auto r = Pipeline(g).apply_autoscheduler(kGPU, gpu);
+            auto r = Pipeline(g).apply_autoscheduler(kGPU, simple_gpu);
             expect_contains(r.schedule_source, "gpu_tile", "1D GPU");
             printf("PASS  9: 1-D function GPU\n");
         }
@@ -223,7 +229,7 @@ int main(int argc, char **argv) {
             total() = 0.0f;
             total() += input(r.x, r.y);
 
-            auto result = Pipeline(total).apply_autoscheduler(kGPU, gpu);
+            auto result = Pipeline(total).apply_autoscheduler(kGPU, simple_gpu);
             // The scalar function itself must be compute_root, not gpu_tiled.
             expect_contains(result.schedule_source, "total.compute_root()",
                              "scalar reduction GPU");
@@ -242,7 +248,7 @@ int main(int argc, char **argv) {
             scan(x, r) += scan(x, r - 1);   // LHS arg is r, not y
             scan.set_estimate(x, 0, 1024).set_estimate(y, 0, 1024);
 
-            auto result = Pipeline(scan).apply_autoscheduler(kGPU, gpu);
+            auto result = Pipeline(scan).apply_autoscheduler(kGPU, simple_gpu);
             // Init should be tiled; update should fall back (scatter-like).
             expect_contains(result.schedule_source, "gpu_tile",
                              "prefix scan init GPU");
@@ -261,7 +267,7 @@ int main(int argc, char **argv) {
             f(x, y) *= 1.0f / 9.0f;                 // scale  — pure LHS
             f.set_estimate(x, 0, 1024).set_estimate(y, 0, 1024);
 
-            auto result = Pipeline(f).apply_autoscheduler(kGPU, gpu);
+            auto result = Pipeline(f).apply_autoscheduler(kGPU, simple_gpu);
             expect_contains(result.schedule_source, "gpu_tile",
                              "multiple updates GPU");
             printf("PASS 12: multiple update definitions GPU\n");
@@ -276,7 +282,7 @@ int main(int argc, char **argv) {
             outer(x, y) = a(x) * b(y);
             outer.set_estimate(x, 0, 2048).set_estimate(y, 0, 2048);
 
-            auto r = Pipeline(outer).apply_autoscheduler(kGPU, gpu);
+            auto r = Pipeline(outer).apply_autoscheduler(kGPU, simple_gpu);
             expect_contains(r.schedule_source, "gpu_tile", "outer product GPU");
             printf("PASS 13: outer product GPU\n");
         }
@@ -325,7 +331,7 @@ int main(int argc, char **argv) {
             printf("PASS 16: reduction CPU\n");
         }
 
-        // 17. Custom tile sizes via params.
+        // 17. Custom tile sizes via params (SimpleAutoSchedule path).
         {
             Func f("ts_f"), g("ts_g");
             f(x, y) = sqrt(cast<float>(x * x + y * y + 1));
@@ -333,12 +339,155 @@ int main(int argc, char **argv) {
             g.set_estimate(x, 0, 1024).set_estimate(y, 0, 1024);
 
             AutoschedulerParams custom{"Sioutas2020",
-                                       {{"gpu_tile_x", "32"}, {"gpu_tile_y", "8"}}};
+                                       {{"gpu_tile_x", "32"}, {"gpu_tile_y", "8"},
+                                        {"enable_fusion", "0"}, {"enable_cost_model", "0"}}};
             auto r = Pipeline(g).apply_autoscheduler(kGPU, custom);
             // Custom sizes must appear in the schedule string.
             expect_contains(r.schedule_source, "32", "custom tile 32");
             expect_contains(r.schedule_source, "8",  "custom tile 8");
             printf("PASS 17: custom tile sizes\n");
+        }
+
+        // ----------------------------------------------------------------
+        // Tests for enhanced features (bounds-based dim selection)
+        // ----------------------------------------------------------------
+
+        // 18. 4D function: extent-based dim selection should tile x and y
+        //     (the two largest dims), NOT c and x (positional).
+        //     f(c, x, y, n) with c=8, x=128, y=32, n=1 -> tile x x y.
+        {
+            Var cc("cc"), xx("xx"), yy("yy"), nn("nn");
+            Func f4d("f4d");
+            f4d(cc, xx, yy, nn) = cast<float>(cc + xx + yy + nn);
+            f4d.set_estimate(cc, 0, 8)
+               .set_estimate(xx, 0, 128)
+               .set_estimate(yy, 0, 32)
+               .set_estimate(nn, 0, 1);
+
+            auto r = Pipeline(f4d).apply_autoscheduler(kGPU, simple_gpu);
+            // Should tile the two largest dims: xx (128) and yy (32).
+            expect_contains(r.schedule_source, "xx", "4D extent-based tile xx");
+            expect_contains(r.schedule_source, "yy", "4D extent-based tile yy");
+            expect_contains(r.schedule_source, "gpu_tile", "4D extent-based gpu_tile");
+            printf("PASS 18: 4D extent-based dimension selection\n");
+        }
+
+        // 19. 3D function with large channel: should produce a 3D gpu_tile
+        //     (fused extra dim) when combined extra extent >= gpu_tile_channel.
+        //     f(x, y, c) with x=1024, y=1024, c=16 -> 3D tile.
+        {
+            Func f3d("f3d");
+            f3d(x, y, c) = cast<float>(x + y + c);
+            f3d.set_estimate(x, 0, 1024)
+               .set_estimate(y, 0, 1024)
+               .set_estimate(c, 0, 16);
+
+            auto r = Pipeline(f3d).apply_autoscheduler(kGPU, simple_gpu);
+            // 3D tiling emits the fused variable reference in the schedule source.
+            expect_contains(r.schedule_source, "gpu_tile", "3D fused gpu_tile");
+            printf("PASS 19: 3D tiling with fused channel dimension\n");
+        }
+
+        // 20. Rvar unrolling: a gather reduction with a small 3x3 kernel
+        //     should have 'unroll' in the schedule.
+        {
+            ImageParam img(Float(32), 2, "unroll_img");
+            Func fu("fu");
+            RDom r3(-1, 3, -1, 3, "r3");
+            fu(x, y) = 0.0f;
+            fu(x, y) += img(x + r3.x, y + r3.y);
+            fu.set_estimate(x, 0, 1024).set_estimate(y, 0, 1024);
+
+            auto result = Pipeline(fu).apply_autoscheduler(kGPU, simple_gpu);
+            expect_contains(result.schedule_source, "unroll", "rvar unroll 3x3");
+            printf("PASS 20: small rvar unrolling (3x3 kernel)\n");
+        }
+
+        // 21. 1D large function: should use 1D gpu_tile (not fuse-all).
+        //     gpu_tile_x * gpu_tile_y = 256 threads for 1D.
+        {
+            Func f1d("f1d_large");
+            f1d(x) = cast<float>(x * x + 1);
+            f1d.set_estimate(x, 0, 65536);
+
+            auto r = Pipeline(f1d).apply_autoscheduler(kGPU, simple_gpu);
+            expect_contains(r.schedule_source, "gpu_tile", "1D large gpu_tile");
+            printf("PASS 21: 1D large function (1D tile)\n");
+        }
+
+        // ----------------------------------------------------------------
+        // Tests for full cost-model path (enable_fusion=true, default)
+        // ----------------------------------------------------------------
+
+        // 22. Stencil chain with full cost-model: should produce compute_at
+        //     fusion and use split+.gpu() instead of gpu_tile.
+        {
+            const int N = 6;
+            Func fc[N];
+            fc[0](x, y) = sqrt(cast<float>(x + y + 1));
+            for (int k = 1; k < N; k++) {
+                fc[k](x, y) = fc[k-1](x-1, y) + fc[k-1](x, y) + fc[k-1](x+1, y);
+            }
+            fc[N-1].set_estimate(x, 0, 2048).set_estimate(y, 0, 2048);
+
+            auto r = Pipeline(fc[N-1]).apply_autoscheduler(kGPU, gpu);
+            // Full cost-model path uses .gpu() (split+reorder+gpu) instead of gpu_tile.
+            expect_contains(r.schedule_source, ".gpu(", "full-path stencil chain .gpu");
+            expect_contains(r.schedule_source, "compute_at(", "full-path stencil chain compute_at");
+            expect_not_contains(r.schedule_source, "gpu_tile", "full-path stencil chain no gpu_tile");
+            printf("PASS 22: full cost-model stencil chain (compute_at + .gpu)\n");
+        }
+
+        // 23. Histogram scatter with full cost-model: scatter update must
+        //     still use gpu_single_thread regardless of path taken.
+        {
+            ImageParam input2(Int(32), 2, "cm_hist_input");
+            input2.set_estimates({{0, 1024}, {0, 1024}});  // required for cost-model path
+            Func f2("cm_hist_f"), hist2("cm_hist"), out2("cm_hist_out");
+            f2(x, y) = clamp(input2(x, y), 0, 255);
+            RDom r2(0, 1024, 0, 1024);
+            hist2(i) = cast<uint32_t>(0);
+            hist2(f2(r2.x, r2.y)) += cast<uint32_t>(1);
+            out2(i) = hist2(i);
+            f2.set_estimate(x, 0, 1024).set_estimate(y, 0, 1024);
+            out2.set_estimate(i, 0, 256);
+
+            auto result = Pipeline(out2).apply_autoscheduler(kGPU, gpu);
+            // Scatter update must always fall back to gpu_single_thread.
+            expect_contains(result.schedule_source, "gpu_single_thread",
+                             "full-path histogram scatter");
+            printf("PASS 23: full cost-model histogram (gpu_single_thread preserved)\n");
+        }
+
+        // 24. Scalar (0-D) reduction with full cost-model: scalar must not
+        //     be tiled.
+        {
+            ImageParam sc_in2(Float(32), 2, "cm_sc_input");
+            sc_in2.set_estimates({{0, 1024}, {0, 1024}});  // required for cost-model path
+            Func sc_total("cm_total");
+            RDom sc_r(0, 1024, 0, 1024);
+            sc_total() = 0.0f;
+            sc_total() += sc_in2(sc_r.x, sc_r.y);
+
+            auto result = Pipeline(sc_total).apply_autoscheduler(kGPU, gpu);
+            expect_contains(result.schedule_source, "cm_total.compute_root()",
+                             "full-path scalar");
+            expect_not_contains(result.schedule_source, "cm_total.gpu_tile",
+                                 "full-path scalar no gpu_tile");
+            printf("PASS 24: full cost-model scalar reduction\n");
+        }
+
+        // 25. CPU is unchanged by enable_fusion (CPU always uses SimpleAutoSchedule).
+        {
+            Func f("cpu_chain_f"), g("cpu_chain_g");
+            f(x, y) = sqrt(cast<float>(x * x + y * y + 1));
+            g(x, y) = f(x-1, y) + f(x, y) + f(x+1, y);
+            g.set_estimate(x, 0, 2048).set_estimate(y, 0, 2048);
+
+            auto r = Pipeline(g).apply_autoscheduler(kCPU, cpu);
+            expect_contains(r.schedule_source, "compute_root", "cpu full-path");
+            expect_not_contains(r.schedule_source, "gpu_tile", "cpu full-path no gpu_tile");
+            printf("PASS 25: CPU path unaffected by enable_fusion flag\n");
         }
 
 #ifdef HALIDE_WITH_EXCEPTIONS
