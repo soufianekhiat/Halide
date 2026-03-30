@@ -115,7 +115,7 @@ void schedule_pure_gpu(Func &f,
         f.gpu_tile(args[0], args[1],
                    xo, yo, xi, yi,
                    p.gpu_tile_x, p.gpu_tile_y,
-                   TailStrategy::Auto, DeviceAPI::Default_GPU)
+                   TailStrategy::GuardWithIf, DeviceAPI::Default_GPU)
          .compute_root();
         src << name << ".gpu_tile("
             << args[0].name() << ", " << args[1].name()
@@ -127,7 +127,7 @@ void schedule_pure_gpu(Func &f,
         Var xo("xo"), xi("xi");
         f.gpu_tile(args[0], xo, xi,
                    p.gpu_tile_x,
-                   TailStrategy::Auto, DeviceAPI::Default_GPU)
+                   TailStrategy::GuardWithIf, DeviceAPI::Default_GPU)
          .compute_root();
         src << name << ".gpu_tile("
             << args[0].name() << ", xo, xi, " << p.gpu_tile_x
@@ -168,7 +168,7 @@ void schedule_reduction_gpu(Func &f,
         f.gpu_tile(args[0], args[1],
                    xo, yo, xi, yi,
                    p.gpu_tile_x, p.gpu_tile_y,
-                   TailStrategy::Auto, DeviceAPI::Default_GPU)
+                   TailStrategy::GuardWithIf, DeviceAPI::Default_GPU)
          .compute_root();
         src << name << ".gpu_tile("
             << args[0].name() << ", " << args[1].name()
@@ -179,7 +179,7 @@ void schedule_reduction_gpu(Func &f,
         Var xo("xo"), xi("xi");
         f.gpu_tile(args[0], xo, xi,
                    p.gpu_tile_x,
-                   TailStrategy::Auto, DeviceAPI::Default_GPU)
+                   TailStrategy::GuardWithIf, DeviceAPI::Default_GPU)
          .compute_root();
         src << name << ".gpu_tile("
             << args[0].name() << ", xo, xi, " << p.gpu_tile_x
@@ -197,7 +197,7 @@ void schedule_reduction_gpu(Func &f,
                 upd.gpu_tile(args[0], args[1],
                              uxo, uyo, uxi, uyi,
                              p.gpu_tile_x, p.gpu_tile_y,
-                             TailStrategy::Auto, DeviceAPI::Default_GPU);
+                             TailStrategy::GuardWithIf, DeviceAPI::Default_GPU);
                 src << name << ".update(" << i << ").gpu_tile("
                     << args[0].name() << ", " << args[1].name()
                     << ", uxo, uyo, uxi, uyi, "
@@ -206,7 +206,7 @@ void schedule_reduction_gpu(Func &f,
                 Var uxo("uxo"), uxi("uxi");
                 upd.gpu_tile(args[0], uxo, uxi,
                              p.gpu_tile_x,
-                             TailStrategy::Auto, DeviceAPI::Default_GPU);
+                             TailStrategy::GuardWithIf, DeviceAPI::Default_GPU);
                 src << name << ".update(" << i << ").gpu_tile("
                     << args[0].name() << ", uxo, uxi, "
                     << p.gpu_tile_x << ");\n";
@@ -225,7 +225,10 @@ void schedule_reduction_gpu(Func &f,
 // CPU scheduler
 // ---------------------------------------------------------------------------
 
-/** Apply a tiled + parallel + vectorized CPU schedule and emit source. */
+/** Apply a tiled + parallel + vectorized CPU schedule and emit source.
+ *  Reduction funcs (has_update_definition) get vectorize-only (no parallel)
+ *  on the pure init to avoid deadlocking Halide's thread pool when the
+ *  unscheduled update runs after a parallel init barrier. */
 void schedule_for_cpu(Func &f,
                       const Sioutas2020Params &p,
                       ostringstream &src) {
@@ -240,31 +243,59 @@ void schedule_for_cpu(Func &f,
 
     const auto &args = f.args();
     constexpr int vec_width = 8;
+    // Do not parallelize the pure init of reduction funcs: the unscheduled
+    // update runs sequentially after the init barrier, and parallelizing the
+    // init can deadlock Halide's thread pool when the update tries to re-enter.
+    const bool has_update = f.has_update_definition();
 
     if (ndims >= 2) {
         Var xo("xo"), yo("yo"), xi("xi"), yi("yi");
-        f.tile(args[0], args[1],
-               xo, yo, xi, yi,
-               p.cpu_tile_x, p.cpu_tile_y)
-         .parallel(yo)
-         .vectorize(xi, vec_width)
-         .compute_root();
-        src << name << ".tile("
-            << args[0].name() << ", " << args[1].name()
-            << ", xo, yo, xi, yi, "
-            << p.cpu_tile_x << ", " << p.cpu_tile_y
-            << ").parallel(yo).vectorize(xi, " << vec_width
-            << ").compute_root();\n";
+        if (has_update) {
+            f.tile(args[0], args[1],
+                   xo, yo, xi, yi,
+                   p.cpu_tile_x, p.cpu_tile_y)
+             .vectorize(xi, vec_width)
+             .compute_root();
+            src << name << ".tile("
+                << args[0].name() << ", " << args[1].name()
+                << ", xo, yo, xi, yi, "
+                << p.cpu_tile_x << ", " << p.cpu_tile_y
+                << ").vectorize(xi, " << vec_width
+                << ").compute_root(); // reduction: no parallel on init\n";
+        } else {
+            f.tile(args[0], args[1],
+                   xo, yo, xi, yi,
+                   p.cpu_tile_x, p.cpu_tile_y)
+             .parallel(yo)
+             .vectorize(xi, vec_width)
+             .compute_root();
+            src << name << ".tile("
+                << args[0].name() << ", " << args[1].name()
+                << ", xo, yo, xi, yi, "
+                << p.cpu_tile_x << ", " << p.cpu_tile_y
+                << ").parallel(yo).vectorize(xi, " << vec_width
+                << ").compute_root();\n";
+        }
     } else {
         Var xo("xo"), xi("xi");
-        f.split(args[0], xo, xi, p.cpu_tile_x)
-         .parallel(xo)
-         .vectorize(xi, vec_width)
-         .compute_root();
-        src << name << ".split("
-            << args[0].name() << ", xo, xi, " << p.cpu_tile_x
-            << ").parallel(xo).vectorize(xi, " << vec_width
-            << ").compute_root();\n";
+        if (has_update) {
+            f.split(args[0], xo, xi, p.cpu_tile_x)
+             .vectorize(xi, vec_width)
+             .compute_root();
+            src << name << ".split("
+                << args[0].name() << ", xo, xi, " << p.cpu_tile_x
+                << ").vectorize(xi, " << vec_width
+                << ").compute_root(); // reduction: no parallel on init\n";
+        } else {
+            f.split(args[0], xo, xi, p.cpu_tile_x)
+             .parallel(xo)
+             .vectorize(xi, vec_width)
+             .compute_root();
+            src << name << ".split("
+                << args[0].name() << ", xo, xi, " << p.cpu_tile_x
+                << ").parallel(xo).vectorize(xi, " << vec_width
+                << ").compute_root();\n";
+        }
     }
 }
 
@@ -276,7 +307,7 @@ string generate_schedule(const vector<Function> &outputs,
                           const Target &target,
                           const Sioutas2020Params &params) {
     ostringstream src;
-    src << "// Sioutas2020 autoscheduler — target: "
+    src << "// Sioutas2020 autoscheduler -- target: "
         << target.to_string() << "\n\n";
 
     // 1. Transitive closure of all pipeline functions.
