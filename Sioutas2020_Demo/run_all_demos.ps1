@@ -1,6 +1,6 @@
 # run_all_demos.ps1
 #
-# Runs all 6 Sioutas2020 comparison demos.
+# Runs all 8 Sioutas2020 comparison demos.
 # Each demo writes its own <name>_report.txt; all are then merged into
 # combined_report.txt in the current directory.
 #
@@ -51,12 +51,14 @@ foreach ($dll in @($Sioutas, $Anderson, $Adams2019, $Li2018, $Mullapudi)) {
 }
 
 $Demos = @(
-    @{ Exe = "demo_gaussian_blur";  Report = "gaussian_blur_report.txt"  },
-    @{ Exe = "demo_harris_corner";  Report = "harris_corner_report.txt"  },
-    @{ Exe = "demo_matmul";         Report = "matmul_report.txt"         },
-    @{ Exe = "demo_histogram_eq";   Report = "histogram_eq_report.txt"   },
-    @{ Exe = "demo_unsharp_mask";   Report = "unsharp_mask_report.txt"   },
-    @{ Exe = "demo_conv2d_relu";    Report = "conv2d_relu_report.txt"    }
+    @{ Exe = "demo_gaussian_blur";    Report = "gaussian_blur_report.txt"    },
+    @{ Exe = "demo_harris_corner";    Report = "harris_corner_report.txt"    },
+    @{ Exe = "demo_matmul";           Report = "matmul_report.txt"           },
+    @{ Exe = "demo_histogram_eq";     Report = "histogram_eq_report.txt"     },
+    @{ Exe = "demo_unsharp_mask";     Report = "unsharp_mask_report.txt"     },
+    @{ Exe = "demo_conv2d_relu";      Report = "conv2d_relu_report.txt"      },
+    @{ Exe = "demo_nl_means";         Report = "nl_means_report.txt"         },
+    @{ Exe = "demo_local_laplacian";  Report = "local_laplacian_report.txt"  }
 )
 
 $Passed = 0

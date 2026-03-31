@@ -2,7 +2,7 @@
  * demo_common.h
  *
  * Shared utilities for the Sioutas2020 five-way autoscheduler comparison demos.
- * All 6 demo executables include this header.
+ * All 8 demo executables include this header.
  *
  * Usage of each demo:
  *   <demo>.exe <sioutas2020.dll> <anderson2021.dll> <adams2019.dll>
@@ -314,36 +314,31 @@ static inline void fmt_spd(char *buf, size_t sz, double base, double ms,
 static inline void print_cpu_perf_table(Report &rpt,
                                         double ms_s,    // Sioutas2020
                                         double ms_a2019,// Adams2019
-                                        double ms_l,    // Li2018
                                         double ms_m) {  // Mullapudi2016
     const std::string tgt = get_host_target().to_string();
     rpt << "\n--- CPU Performance Benchmark (target: " << tgt << ") ---\n"
-        << "    Note: Anderson2021 requires GPU hardware; no CPU benchmark.\n";
+        << "    Note: Anderson2021/Li2018 are GPU-only schedulers.\n";
 
-    char t_s[16], t_a[16], t_l[16], t_m[16];
-    char sp_s[16], sp_a[16], sp_l[16], sp_m[16];
+    char t_s[16], t_a[16], t_m[16];
+    char sp_s[16], sp_a[16], sp_m[16];
     fmt_us(t_s, sizeof(t_s), ms_s);
     fmt_us(t_a, sizeof(t_a), ms_a2019);
-    fmt_us(t_l, sizeof(t_l), ms_l);
     fmt_us(t_m, sizeof(t_m), ms_m);
     fmt_spd(sp_s, sizeof(sp_s), ms_s, ms_s, true);
     fmt_spd(sp_a, sizeof(sp_a), ms_s, ms_a2019, false);
-    fmt_spd(sp_l, sizeof(sp_l), ms_s, ms_l, false);
     fmt_spd(sp_m, sizeof(sp_m), ms_s, ms_m, false);
 
     table_sep(rpt);
     table_header(rpt, "Scheduler", "Time(us)", "vs S2020", "Scheduler", "Time(us)", "vs S2020");
     table_sep(rpt);
-    // Row 1: Sioutas2020 | Anderson2021
-    table_row_sssss(rpt, "Sioutas2020", t_s, sp_s, "Anderson2021", "N/A", "GPU-only");
-    // Row 2: Adams2019   | Li2018
-    table_row_sssss(rpt, "Adams2019",   t_a, sp_a, "Li2018",       t_l,  sp_l);
-    // Row 3: Mullapudi2016
+    // Row 1: Sioutas2020 | Adams2019
+    table_row_sssss(rpt, "Sioutas2020", t_s, sp_s, "Adams2019", t_a, sp_a);
+    // Row 2: Mullapudi2016
     table_row_sssss(rpt, "Mullapudi2016", t_m, sp_m, "", "", "");
     table_sep(rpt);
 }
 
-// GPU perf table: all 5, Adams2019 = CPU-only on GPU target
+// GPU perf table: GPU-capable schedulers only (no Adams2019 — it's CPU-only)
 static inline void print_gpu_perf_table(Report &rpt,
                                         double ms_s,   // Sioutas2020
                                         double ms_a21, // Anderson2021
@@ -368,7 +363,6 @@ static inline void print_gpu_perf_table(Report &rpt,
     table_sep(rpt);
     table_row_sssss(rpt, "Sioutas2020",   t_s, sp_s, "Anderson2021", t_a, sp_a);
     table_row_sssss(rpt, "Li2018",        t_l, sp_l, "Mullapudi(GPU)", t_m, sp_m);
-    table_row_sssss(rpt, "Adams2019", "N/A", "CPU-only", "", "", "");
     table_sep(rpt);
 }
 
@@ -487,6 +481,8 @@ static inline void run_five_way_with_bench(
     print_stats_table(rpt, names, stats);
 
     // ---- CPU benchmark -----------------------------------------------------
+    // Only CPU-capable schedulers: Sioutas2020 (CPU fallback), Adams2019, Mullapudi2016.
+    // Li2018 is GPU-only and hard-crashes on some CPU pipelines (e.g. NL-means).
     rpt << "\n    Benchmarking Sioutas2020 on CPU...\n";   fflush(stdout);
     double ms_s = -1.0;
     try { ms_s = bench_fn(sioutas_params(), cpu_target); }
@@ -497,17 +493,12 @@ static inline void run_five_way_with_bench(
     try { ms_a2019 = bench_fn(adams_params(), cpu_target); }
     catch (const std::exception &e) { rpt << "    ERROR: " << e.what() << "\n"; }
 
-    rpt << "    Benchmarking Li2018 on CPU...\n";          fflush(stdout);
-    double ms_l = -1.0;
-    try { ms_l = bench_fn(li2018_params(), cpu_target); }
-    catch (const std::exception &e) { rpt << "    ERROR: " << e.what() << "\n"; }
-
     rpt << "    Benchmarking Mullapudi2016 on CPU...\n";   fflush(stdout);
     double ms_m = -1.0;
     try { ms_m = bench_fn(mullapudi_params(), cpu_target); }
     catch (const std::exception &e) { rpt << "    ERROR: " << e.what() << "\n"; }
 
-    print_cpu_perf_table(rpt, ms_s, ms_a2019, ms_l, ms_m);
+    print_cpu_perf_table(rpt, ms_s, ms_a2019, ms_m);
 
     // ---- GPU schedule analysis + optional execution benchmark --------------
     rpt << "\n--- GPU Schedule Analysis (CUDA target: " << cuda_target.to_string() << ") ---\n"
@@ -521,8 +512,7 @@ static inline void run_five_way_with_bench(
     rpt.printf("    %-22s  gpu=%d  gpu_tile=%d  compute_root=%d  compute_at=%d  gpu_single_thread=%d\n",
                "Li2018:", stats[3].gpu_count, stats[3].gpu_tile_count,
                stats[3].compute_root_count, stats[3].compute_at_count, stats[3].gpu_single_thread);
-    rpt << "    Adams2019: CPU-only scheduler (no GPU primitives).\n"
-        << "    Mullapudi2016: CPU scheduler shown above; GPU via experimental_gpu_schedule.\n"
+    rpt << "    Mullapudi2016: CPU scheduler shown above; GPU via experimental_gpu_schedule.\n"
         << "    Sioutas2020 (full cost-model path): .gpu(outer,inner) + .compute_at() fusion\n"
         << "    per the TACO 2020 paper.  SimpleAutoSchedule fallback uses gpu_tile().\n"
         << "    Anderson2021/Li2018 use fine-grained gpu_blocks()+gpu_threads() search.\n"

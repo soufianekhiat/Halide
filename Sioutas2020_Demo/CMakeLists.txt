@@ -9,7 +9,7 @@ set(HalideHelpers_DIR "C:/git/Halide/install_455b34b/lib/cmake/HalideHelpers")
 find_package(Halide REQUIRED)
 
 # ---------------------------------------------------------------------------
-# Build all 6 demo executables
+# Build all 8 demo executables
 # ---------------------------------------------------------------------------
 set(DEMOS
     demo_gaussian_blur
@@ -18,6 +18,8 @@ set(DEMOS
     demo_histogram_eq
     demo_unsharp_mask
     demo_conv2d_relu
+    demo_nl_means
+    demo_local_laplacian
 )
 
 foreach(demo IN LISTS DEMOS)

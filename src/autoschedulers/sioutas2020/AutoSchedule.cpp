@@ -73,6 +73,188 @@ struct Sioutas2020Params {
 };
 
 // ============================================================================
+// GPU hardware parameters (per compute capability)
+// ============================================================================
+
+struct GPU_Params {
+    int max_regs_per_thread;
+    int total_regs_per_SM;
+    int max_regs_per_block;
+    int limit_threads_per_warp;
+    int min_shared_mem_unit;
+    int limit_warps_per_SM;
+    int max_blocks_per_SM;
+    int limit_shared_mem_per_SM;
+    int limit_shared_mem_per_block;
+    int limit_threads_per_SM;
+    int limit_threads_per_block;
+    int n_SM;
+    int warp_alloc_granularity;
+    int reg_alloc_unit_size;
+};
+
+static GPU_Params get_gpu_params(const Target &target, int n_sm) {
+    GPU_Params p;
+    p.limit_threads_per_warp = 32;
+    p.n_SM = n_sm;
+
+    // Detect compute capability from target features.
+    // Check from highest to lowest so the most specific match wins.
+    if (target.has_feature(Target::CUDACapability86)) {
+        // Ampere GA10x (RTX 3060-3090)
+        p.max_regs_per_thread = 255;  p.total_regs_per_SM = 65536;
+        p.max_regs_per_block  = 65536; p.min_shared_mem_unit = 128;
+        p.limit_warps_per_SM  = 48;    p.max_blocks_per_SM   = 16;
+        p.limit_shared_mem_per_SM = 102400; p.limit_shared_mem_per_block = 49152;
+        p.limit_threads_per_SM = 1536; p.limit_threads_per_block = 1024;
+        p.warp_alloc_granularity = 4;  p.reg_alloc_unit_size = 256;
+    } else if (target.has_feature(Target::CUDACapability80)) {
+        // Ampere GA100 (A100)
+        p.max_regs_per_thread = 255;  p.total_regs_per_SM = 65536;
+        p.max_regs_per_block  = 65536; p.min_shared_mem_unit = 128;
+        p.limit_warps_per_SM  = 64;    p.max_blocks_per_SM   = 32;
+        p.limit_shared_mem_per_SM = 167936; p.limit_shared_mem_per_block = 49152;
+        p.limit_threads_per_SM = 2048; p.limit_threads_per_block = 1024;
+        p.warp_alloc_granularity = 4;  p.reg_alloc_unit_size = 256;
+    } else if (target.has_feature(Target::CUDACapability75)) {
+        // Turing (RTX 2080 Ti)
+        p.max_regs_per_thread = 255;  p.total_regs_per_SM = 65536;
+        p.max_regs_per_block  = 65536; p.min_shared_mem_unit = 256;
+        p.limit_warps_per_SM  = 32;    p.max_blocks_per_SM   = 16;
+        p.limit_shared_mem_per_SM = 65536; p.limit_shared_mem_per_block = 49152;
+        p.limit_threads_per_SM = 1024; p.limit_threads_per_block = 1024;
+        p.warp_alloc_granularity = 4;  p.reg_alloc_unit_size = 256;
+    } else if (target.has_feature(Target::CUDACapability70)) {
+        // Volta (V100)
+        p.max_regs_per_thread = 255;  p.total_regs_per_SM = 65536;
+        p.max_regs_per_block  = 65536; p.min_shared_mem_unit = 256;
+        p.limit_warps_per_SM  = 64;    p.max_blocks_per_SM   = 32;
+        p.limit_shared_mem_per_SM = 98304; p.limit_shared_mem_per_block = 49152;
+        p.limit_threads_per_SM = 2048; p.limit_threads_per_block = 1024;
+        p.warp_alloc_granularity = 4;  p.reg_alloc_unit_size = 256;
+    } else if (target.has_feature(Target::CUDACapability61)) {
+        // Pascal GP10x (GTX 1080)
+        p.max_regs_per_thread = 255;  p.total_regs_per_SM = 65536;
+        p.max_regs_per_block  = 65536; p.min_shared_mem_unit = 256;
+        p.limit_warps_per_SM  = 64;    p.max_blocks_per_SM   = 32;
+        p.limit_shared_mem_per_SM = 98304; p.limit_shared_mem_per_block = 49152;
+        p.limit_threads_per_SM = 2048; p.limit_threads_per_block = 1024;
+        p.warp_alloc_granularity = 4;  p.reg_alloc_unit_size = 256;
+    } else if (target.has_feature(Target::CUDACapability50)) {
+        // Maxwell
+        p.max_regs_per_thread = 255;  p.total_regs_per_SM = 65536;
+        p.max_regs_per_block  = 65536; p.min_shared_mem_unit = 256;
+        p.limit_warps_per_SM  = 64;    p.max_blocks_per_SM   = 32;
+        p.limit_shared_mem_per_SM = 65536; p.limit_shared_mem_per_block = 49152;
+        p.limit_threads_per_SM = 2048; p.limit_threads_per_block = 1024;
+        p.warp_alloc_granularity = 4;  p.reg_alloc_unit_size = 256;
+    } else if (target.has_feature(Target::CUDACapability35)) {
+        // Kepler GK110
+        p.max_regs_per_thread = 255;  p.total_regs_per_SM = 65536;
+        p.max_regs_per_block  = 65536; p.min_shared_mem_unit = 256;
+        p.limit_warps_per_SM  = 64;    p.max_blocks_per_SM   = 16;
+        p.limit_shared_mem_per_SM = 49152; p.limit_shared_mem_per_block = 49152;
+        p.limit_threads_per_SM = 2048; p.limit_threads_per_block = 1024;
+        p.warp_alloc_granularity = 4;  p.reg_alloc_unit_size = 256;
+    } else if (target.has_feature(Target::CUDACapability32)) {
+        // Kepler GK20A
+        p.max_regs_per_thread = 255;  p.total_regs_per_SM = 32768;
+        p.max_regs_per_block  = 32768; p.min_shared_mem_unit = 256;
+        p.limit_warps_per_SM  = 64;    p.max_blocks_per_SM   = 16;
+        p.limit_shared_mem_per_SM = 49152; p.limit_shared_mem_per_block = 49152;
+        p.limit_threads_per_SM = 2048; p.limit_threads_per_block = 1024;
+        p.warp_alloc_granularity = 4;  p.reg_alloc_unit_size = 256;
+    } else if (target.has_feature(Target::CUDACapability30)) {
+        // Kepler GK10x
+        p.max_regs_per_thread = 63;   p.total_regs_per_SM = 65536;
+        p.max_regs_per_block  = 65536; p.min_shared_mem_unit = 256;
+        p.limit_warps_per_SM  = 64;    p.max_blocks_per_SM   = 16;
+        p.limit_shared_mem_per_SM = 49152; p.limit_shared_mem_per_block = 49152;
+        p.limit_threads_per_SM = 2048; p.limit_threads_per_block = 1024;
+        p.warp_alloc_granularity = 4;  p.reg_alloc_unit_size = 256;
+    } else {
+        // Default: CC 2.0 baseline
+        p.max_regs_per_thread = 64;   p.total_regs_per_SM = 32768;
+        p.max_regs_per_block  = 32768; p.min_shared_mem_unit = 128;
+        p.limit_warps_per_SM  = 48;    p.max_blocks_per_SM   = 8;
+        p.limit_shared_mem_per_SM = 49152; p.limit_shared_mem_per_block = 49152;
+        p.limit_threads_per_SM = 1536; p.limit_threads_per_block = 1024;
+        p.warp_alloc_granularity = 2;  p.reg_alloc_unit_size = 64;
+    }
+    return p;
+}
+
+/** Estimate GPU occupancy given thread count, shared memory, and block count.
+ *  Returns {occupancy (0..1), active_threads_per_SM, active_blocks_per_SM}.
+ *  Uses the CUDA occupancy model from the reference AutoGPU. */
+struct OccupancyResult {
+    float occupancy;
+    int active_threads;
+    int active_blocks;
+};
+
+static OccupancyResult estimate_occupancy(const GPU_Params &gp,
+                                           int threads_per_block,
+                                           int shared_mem_bytes) {
+    OccupancyResult result = {0.0f, 0, 0};
+    if (threads_per_block <= 0) return result;
+
+    // Clamp regs per thread estimate (default HL_CUDA_JIT_MAX_REGS = 64)
+    int num_regs = std::min(gp.max_regs_per_thread,
+                            gp.total_regs_per_SM / std::max(threads_per_block, 1));
+    num_regs = std::max(num_regs, 1);
+    num_regs = std::min(num_regs, 64);
+
+    int warps_per_block = (threads_per_block + gp.limit_threads_per_warp - 1)
+                          / gp.limit_threads_per_warp;
+
+    int shmem_bytes = std::max(shared_mem_bytes, gp.min_shared_mem_unit);
+
+    // Register-limited blocks per SM
+    int regs_per_warp = ((num_regs * gp.limit_threads_per_warp
+                          + gp.reg_alloc_unit_size - 1) / gp.reg_alloc_unit_size)
+                        * gp.reg_alloc_unit_size;
+    int warps_from_regs = (regs_per_warp > 0)
+        ? (gp.max_regs_per_block / regs_per_warp) : gp.limit_warps_per_SM;
+    // Round down to warp_alloc_granularity
+    warps_from_regs = (warps_from_regs / gp.warp_alloc_granularity)
+                      * gp.warp_alloc_granularity;
+    int blocks_from_regs = (warps_per_block > 0)
+        ? (warps_from_regs / warps_per_block)
+              * (gp.total_regs_per_SM / gp.max_regs_per_block)
+        : 0;
+
+    // Warp-limited blocks per SM
+    int blocks_from_warps = std::min(gp.max_blocks_per_SM,
+                                     (warps_per_block > 0)
+                                         ? gp.limit_warps_per_SM / warps_per_block
+                                         : 0);
+
+    // Shared-memory-limited blocks per SM
+    int blocks_from_shmem = (shmem_bytes > 0)
+        ? gp.limit_shared_mem_per_SM / shmem_bytes
+        : gp.max_blocks_per_SM;
+
+    int active_blocks = std::min({blocks_from_warps, blocks_from_regs,
+                                  blocks_from_shmem, gp.max_blocks_per_SM});
+    active_blocks = std::max(active_blocks, 1);
+
+    int active_warps = active_blocks * warps_per_block;
+    int active_threads = active_warps * std::min(threads_per_block,
+                                                  gp.limit_threads_per_warp);
+    active_threads = std::min(active_threads, gp.limit_threads_per_SM);
+
+    float occupancy = (gp.limit_warps_per_SM > 0)
+        ? (float)active_warps / (float)gp.limit_warps_per_SM
+        : 0.0f;
+
+    result.occupancy      = occupancy;
+    result.active_threads = active_threads;
+    result.active_blocks  = active_blocks;
+    return result;
+}
+
+// ============================================================================
 // SimpleAutoSchedule utilities (bounds-inference, tiling helpers)
 // ============================================================================
 
@@ -1062,6 +1244,12 @@ struct Partitioner {
     struct GroupAnalysis {
         Cost cost;
         Expr parallelism;
+        // GPU-specific fields (from reference AutoGPU)
+        float occupancy{0.0f};
+        int n_threads{0};          // threads per block
+        int active_threads{0};     // active threads per SM
+        int threads_out{0};        // thread-block product for output stage
+        int64_t shared_mem{0};     // shared memory bytes per block
 
         GroupAnalysis() : cost(Cost()), parallelism(Expr()) {}
         GroupAnalysis(const Cost &c, Expr p)
@@ -1097,9 +1285,14 @@ struct Partitioner {
     RegionCosts &costs;
     const vector<Function> &outputs;
     // GPU cost model parameters
+    GPU_Params gpu_params;
     float gpu_balance;
     uint64_t gpu_cache_size;
     int min_parallelism;
+
+    set<string> dims_to_tile(const FStage &stg);
+    Expr estimate_tile_benefit(const GroupAnalysis &old_g, const GroupAnalysis &new_g,
+                               bool final_tiles, bool ensure_parallelism) const;
 
     Partitioner(const map<string, Box> &pipeline_bounds,
                 const Target &target,
@@ -1130,7 +1323,8 @@ struct Partitioner {
                           bool no_redundant_work, bool ensure_parallelism) const;
 
     Expr estimate_benefit(const vector<pair<GroupingChoice, GroupConfig>> &new_grouping,
-                          bool no_redundant_work, bool ensure_parallelism) const;
+                          bool no_redundant_work, bool ensure_parallelism,
+                          Level level = Level::Inline) const;
 
     DimBounds get_bounds(const FStage &stg);
 
@@ -1154,10 +1348,17 @@ Partitioner::Partitioner(const map<string, Box> &_pipeline_bounds,
     : pipeline_bounds(_pipeline_bounds), target(_target),
       dep_analysis(_dep_analysis), costs(_costs), outputs(_outputs) {
 
-    // GPU cost model defaults (match mullapudi2016 GPU params)
+    // GPU cost model defaults
     gpu_balance    = 20.0f;
     gpu_cache_size = 48 * 1024;  // 48 KB shared memory
     min_parallelism = 32;        // at least one GPU warp
+
+    // Initialize GPU hardware parameters
+    if (target.has_gpu_feature()) {
+        // n_SM: use a reasonable default; real SM count isn't available at schedule time
+        int n_sm = 40;  // reasonable default for modern GPUs
+        gpu_params = get_gpu_params(target, n_sm);
+    }
 
     // Create one group per stage
     for (const auto &f : dep_analysis.env) {
@@ -1197,9 +1398,57 @@ void Partitioner::initialize_groups() {
     for (pair<const FStage, Group> &g : groups) {
         auto best = find_best_tile_config(g.second);
         g.second.tile_sizes = best.first;
-        group_costs.emplace(g.second.output, best.second);
+        group_costs[g.second.output] = best.second;
     }
     grouping_cache.clear();
+}
+
+set<string> Partitioner::dims_to_tile(const FStage &stg) {
+    const vector<Dim> &dims = get_stage_dims(stg.func, stg.stage_num);
+    if (dims.size() <= 1) return {};
+
+    vector<string> tile_vars_init;
+    for (int d = 0; d < (int)dims.size() - 1; d++) {
+        if (!dims[d].is_rvar()) tile_vars_init.push_back(dims[d].var);
+    }
+    if (tile_vars_init.empty()) return {};
+
+    // Compute extents for each pure var
+    DimBounds stg_bounds = get_bounds(stg);
+    vector<pair<int64_t, string>> extents;
+    for (const string &var : tile_vars_init) {
+        Interval &bound = get_element(stg_bounds, var);
+        Expr extent = simplify(substitute_var_estimates(get_extent(bound)));
+        auto ext_int = as_const_int(extent);
+        int64_t ext = ext_int ? *ext_int : 1;
+        extents.push_back({ext, var});
+    }
+
+    // Always include the first (innermost) pure var
+    set<string> tile_vars;
+    tile_vars.insert(extents[0].second);
+
+    // Sort by extent descending
+    std::sort(extents.begin(), extents.end(),
+              [](const pair<int64_t,string> &a, const pair<int64_t,string> &b) {
+                  return a.first > b.first;
+              });
+
+    // Add dims with extent > 16, up to 3 total (matching reference)
+    for (const auto &ex : extents) {
+        if (tile_vars.size() >= 3) break;
+        if (tile_vars.count(ex.second)) continue;
+        if (ex.first > 16) tile_vars.insert(ex.second);
+    }
+    // If still < 2 dims, try extent > 8
+    if (tile_vars.size() < 2) {
+        for (const auto &ex : extents) {
+            if (tile_vars.size() >= 3) break;
+            if (tile_vars.count(ex.second)) continue;
+            if (ex.first > 8) tile_vars.insert(ex.second);
+        }
+    }
+    return tile_vars;
 }
 
 vector<map<string, Expr>> Partitioner::generate_tile_configs(const FStage &stg) {
@@ -1211,45 +1460,20 @@ vector<map<string, Expr>> Partitioner::generate_tile_configs(const FStage &stg) 
 
     if (tile_vars.empty()) return {};
 
-    // GPU tile sizes: powers-of-2 up to 64 threads per dim
-    vector<int> size_variants = {1, 4, 8, 16, 32, 64};
+    // Determine which vars are "thread dims" (the ones we actively tile)
+    set<string> thread_vars = dims_to_tile(stg);
 
-    // For GPU: identify 2 largest dims by pipeline bounds extent
-    // to focus search (avoids combinatorial explosion for 4D+)
-    vector<pair<int, string>> dim_extents;
-    auto pb_it = pipeline_bounds.find(stg.func.name());
-    if (pb_it != pipeline_bounds.end()) {
-        const vector<string> &args = stg.func.args();
-        for (const string &var : tile_vars) {
-            for (int i = 0; i < (int)args.size(); i++) {
-                if (args[i] == var) {
-                    auto ext_int = as_const_int(simplify(substitute_var_estimates(
-                        get_extent(pb_it->second[i]))));
-                    if (ext_int && *ext_int > 0)
-                        dim_extents.push_back({(int)*ext_int, var});
-                    else
-                        dim_extents.push_back({1, var});
-                    break;
-                }
-            }
-        }
-    } else {
-        for (const string &var : tile_vars)
-            dim_extents.push_back({1, var});
+    // Compute extents for each var
+    DimBounds stg_bounds = get_bounds(stg);
+    map<string, int64_t> extents;
+    for (const string &var : tile_vars) {
+        Interval &bound = get_element(stg_bounds, var);
+        Expr extent = simplify(substitute_var_estimates(get_extent(bound)));
+        auto ext_int = as_const_int(extent);
+        extents[var] = ext_int ? *ext_int : 1;
     }
 
-    // Sort by extent descending; pick top 2 for tiling
-    std::sort(dim_extents.begin(), dim_extents.end(),
-              [](const pair<int,string> &a, const pair<int,string> &b) {
-                  return a.first > b.first;
-              });
-
-    // Primary tiling dimensions (at most 2)
-    vector<string> primary;
-    for (int i = 0; i < (int)dim_extents.size() && i < 2; i++) {
-        if (dim_extents[i].first >= 4) primary.push_back(dim_extents[i].second);
-    }
-    if (primary.empty()) primary.push_back(tile_vars[0]);
+    vector<int> size_variants = {2, 4, 8, 16, 32, 64, 128};
 
     vector<map<string, Expr>> configs;
     auto is_dup = [&](const map<string, Expr> &t) {
@@ -1259,29 +1483,82 @@ vector<map<string, Expr>> Partitioner::generate_tile_configs(const FStage &stg) 
                             }) != configs.end();
     };
 
-    if (primary.size() == 1) {
-        for (int s0 : size_variants) {
-            if (s0 < 32 || s0 > 1024) continue;
+    if (tile_vars.size() > 1) {
+        // Multi-dim: odometer-style search like reference.
+        // For each thread var, start at 4 and multiply by 2 up to 2*max_tile.
+        // For non-thread vars, use their full extent.
+        int max_tile = 64;
+        int n = tile_vars.size();
+        vector<int> tiles(n);
+        vector<int> initial_tiles(n);
+
+        for (int i = 0; i < n; i++) {
+            bool is_thread = thread_vars.count(tile_vars[i]) > 0;
+            if (is_thread) {
+                initial_tiles[i] = (extents[tile_vars[i]] > 64) ? 4 : 2;
+            } else if (thread_vars.size() >= 2) {
+                initial_tiles[i] = (int)extents[tile_vars[i]];
+            } else {
+                initial_tiles[i] = 1;
+            }
+            tiles[i] = initial_tiles[i];
+        }
+
+        int max_configs = 200;  // safety limit
+        int index = 0;
+        bool flag_iter = true;
+        while (flag_iter && (int)configs.size() < max_configs) {
             map<string, Expr> tiling;
-            for (const string &v : tile_vars)
-                tiling[v] = (v == primary[0]) ? s0 : 1;
-            if (!is_dup(tiling)) configs.push_back(tiling);
+            for (int i = 0; i < n; i++) {
+                int t = std::min((int64_t)tiles[i], extents[tile_vars[i]]);
+                tiling[tile_vars[i]] = std::max(t, 1);
+            }
+            if (!tiling.empty() && !is_dup(tiling))
+                configs.push_back(tiling);
+
+            // Advance odometer
+            bool is_thread = thread_vars.count(tile_vars[index]) > 0;
+            if (is_thread) {
+                tiles[index] *= 2;
+                int limit = (thread_vars.size() <= 2) ? 2 * max_tile : max_tile;
+                if (tiles[index] > limit || tiles[index] > extents[tile_vars[index]] / 2) {
+                    // Reset and carry
+                    tiles[index] = initial_tiles[index];
+                    index++;
+                    while (index < n) {
+                        bool is_t2 = thread_vars.count(tile_vars[index]) > 0;
+                        if (is_t2) {
+                            tiles[index] *= 2;
+                            int lim2 = (thread_vars.size() <= 2) ? 2 * max_tile : max_tile;
+                            if (tiles[index] > lim2 || tiles[index] > extents[tile_vars[index]] / 2) {
+                                tiles[index] = initial_tiles[index];
+                                index++;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            // non-thread dims don't vary
+                            tiles[index] = initial_tiles[index];
+                            index++;
+                        }
+                    }
+                    if (index >= n) flag_iter = false;
+                    index = 0;
+                }
+            } else {
+                // non-thread: skip
+                index++;
+                if (index >= n) flag_iter = false;
+                else index = 0;  // shouldn't happen much
+            }
         }
     } else {
-        // 2D search: require at least 128 threads/block (4 warps) for good occupancy.
-        // Single-warp (32-thread) blocks have no latency hiding; a warp-group minimum
-        // matches the practical lower bound on modern NVIDIA GPUs (Volta/Ampere).
-        for (int s0 : size_variants) {
-            for (int s1 : size_variants) {
-                if (s0 * s1 < 128 || s0 * s1 > 1024) continue;
-                map<string, Expr> tiling;
-                for (const string &v : tile_vars) {
-                    if (v == primary[0]) tiling[v] = s0;
-                    else if (v == primary[1]) tiling[v] = s1;
-                    else tiling[v] = 1;
-                }
-                if (!is_dup(tiling)) configs.push_back(tiling);
-            }
+        // 1D search
+        for (int dim_size : size_variants) {
+            if (dim_size > extents[tile_vars[0]] / 2) continue;
+            map<string, Expr> tiling;
+            tiling[tile_vars[0]] = dim_size;
+            if (!is_dup(tiling)) configs.push_back(tiling);
         }
     }
 
@@ -1305,15 +1582,22 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
         }
     }
 
-    // Count tiles and threads per block
+    // Identify which dims are thread dims (for occupancy calculation)
+    set<string> thread_dims = dims_to_tile(g.output);
+
+    // Count tiles, threads per block, and estimate blocks
     Expr estimate_tiles = make_one(Int(64));
-    Expr threads_per_block = make_one(Int(64));
+    Expr estimate_blocks = make_one(Int(64));
+    int threads_per_block_int = 1;
+    int threads_out_int = 1;  // product of tile sizes for thread dims
+    int col_tile_int = 1;     // innermost pure dim tile size (for cost amortization)
 
     if (!g.output.func.has_extern_definition()) {
         Definition def = get_stage_definition(g.output.func, g.output.stage_num);
         const vector<Dim> &dims = def.schedule().dims();
         DimBounds stg_bounds = get_bounds(g.output);
 
+        bool found_col_tile = false;
         for (int d = 0; d < (int)dims.size() - 1; d++) {
             const string &var = dims[d].var;
             const auto &it = g.tile_sizes.find(var);
@@ -1325,9 +1609,30 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
                 Expr dim_tiles = simplify((extent + size - 1) / size);
                 estimate_tiles *= dim_tiles;
 
+                // Track blocks (tiles along thread dims)
+                if (thread_dims.count(var)) estimate_blocks *= dim_tiles;
+
                 // Track threads per block for pure dims (not rvars)
                 if (!dims[d].is_rvar()) {
-                    threads_per_block *= size;
+                    auto sz_int = as_const_int(size);
+                    if (sz_int) {
+                        threads_per_block_int *= (int)*sz_int;
+                        if (thread_dims.count(var))
+                            threads_out_int *= (int)*sz_int;
+                        // col_tile = innermost pure dim's tile size
+                        if (!found_col_tile) {
+                            col_tile_int = (int)*sz_int;
+                            found_col_tile = true;
+                        }
+                    }
+                }
+            } else if (!dims[d].is_rvar() && !found_col_tile) {
+                // Untiled pure dim: use full extent as col_tile
+                Expr extent = get_extent(get_element(stg_bounds, var));
+                auto ext_int = as_const_int(simplify(substitute_var_estimates(extent)));
+                if (ext_int) {
+                    col_tile_int = (int)*ext_int;
+                    found_col_tile = true;
                 }
             }
         }
@@ -1335,11 +1640,9 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
 
     // GPU validation: reject invalid thread block sizes
     if (target.has_gpu_feature()) {
-        Expr tpb_simplified = simplify(threads_per_block);
-        auto tpb_int = as_const_int(tpb_simplified);
-        if (tpb_int) {
-            if (*tpb_int > 1024 || *tpb_int < 1) return GroupAnalysis();
-        }
+        if (threads_per_block_int > gpu_params.limit_threads_per_block ||
+            threads_per_block_int < 1)
+            return GroupAnalysis();
     }
 
     DimBounds tile_bounds = get_bounds_from_tile_sizes(g.output, g.tile_sizes);
@@ -1376,21 +1679,30 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
         if (!box_size(reg.second).defined()) return GroupAnalysis();
     }
 
-    // GPU shared memory feasibility check: for fused (non-output) group members,
-    // the per-tile allocation lives in shared memory per block. Non-GPU-tiled dims
-    // (tile_size <= 1) run as serial loops inside the block and their full pipeline
-    // extent contributes to shared memory. Reject if any non-tiled dim exceeds the
-    // shared memory budget. Only applies when tile_sizes is non-empty.
+    // Compute shared memory usage for group members (non-output, non-inlined)
+    int64_t shared_mem_bytes = 0;
+    for (const auto &f_reg : alloc_regions) {
+        if (f_reg.first == g.output.func.name()) continue;
+        if (group_members.find(f_reg.first) == group_members.end()) continue;
+        if (g.inlined.count(f_reg.first)) continue;
+
+        Expr footprint = costs.region_size(f_reg.first, f_reg.second);
+        if (footprint.defined()) {
+            Expr fp_simple = simplify(substitute_var_estimates(footprint));
+            auto fp_int = as_const_int(fp_simple);
+            if (fp_int) shared_mem_bytes += *fp_int;
+        }
+    }
+
+    // GPU shared memory feasibility check
     if (target.has_gpu_feature() && g.members.size() > 1 && !g.tile_sizes.empty()) {
-        // Estimate shmem bytes for each member: product of per-dim extents.
-        // For GPU-tiled dims: use the tile_size (from alloc_regions, +stencil).
-        // For non-GPU-tiled dims: use the full pipeline extent.
-        // We approximate by multiplying tile_bound extents for tiled dims and
-        // pipeline_bound extents for non-tiled dims, taking the max member.
+        if (shared_mem_bytes > (int64_t)gpu_cache_size)
+            return GroupAnalysis();
+
+        // Extra check: for non-tiled dims, full pipeline extent contributes
         const auto pb_it = pipeline_bounds.find(g.output.func.name());
         if (pb_it != pipeline_bounds.end()) {
             const vector<string> &out_args = g.output.func.args();
-            // Compute "effective block extent" for each output dim
             int64_t block_vol = 1;
             for (size_t ai = 0; ai < out_args.size() && ai < pb_it->second.size(); ai++) {
                 const string &arg = out_args[ai];
@@ -1405,10 +1717,9 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
                         get_extent(pb_it->second[ai])));
                     auto ext_int = as_const_int(ext);
                     if (!ext_int || *ext_int <= 0) { block_vol = (int64_t)gpu_cache_size + 1; break; }
-                    block_vol *= (*ext_int + 16);   // +16 conservative stencil
+                    block_vol *= (*ext_int + 16);
                 }
             }
-            // Each non-output member occupies ~block_vol floats in shared memory
             int64_t members_count = (int64_t)(g.members.size() - 1);
             if (members_count > 0 &&
                 block_vol * members_count * 4 > static_cast<int64_t>(gpu_cache_size))
@@ -1435,10 +1746,10 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
         }
     }
 
-    // GPU: use shared memory (48KB) as effective cache size
-    float balance = gpu_balance;
-    float cache_size_float = static_cast<float>(gpu_cache_size);
-    float load_slope = balance / cache_size_float;
+    // Cost model: shared memory members use lower cost (in shmem),
+    // external loads use higher cost (from L2/DRAM)
+    float cost_factor_shared = 1.0f;
+    float cost_factor_merge  = 200.0f;
 
     Cost per_tile_cost(group_cost.arith, make_zero(Int(64)));
 
@@ -1452,8 +1763,18 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
         bool is_output = (f_load.first == g.output.func.name());
 
         if (!is_output && is_group_member) {
+            // In shared memory: low cost
+            // Reference: load_count * min(1 + footprint * slope_shared, cost_factor_shared)
             footprint = costs.region_size(f_load.first, alloc_reg);
+            float load_slope = cost_factor_shared / (48.0f * 1024.0f);
+            Expr cost_f = cast<int64_t>(min(1 + footprint * load_slope, cost_factor_shared));
+            per_tile_cost.memory += cost_f * f_load.second;
         } else {
+            // External (L2/DRAM): higher cost
+            // Reference model (lines 3014-3022): two terms + col_dim division
+            //   stage_factor = footprint * cost_f(initial_footprint)
+            //                + load_count * cost_f(footprint)
+            //   partial_factor += stage_factor / col_dim
             Expr initial_footprint;
             const auto &f_load_pb = get_element(pipeline_bounds, f_load.first);
             bool is_function = (dep_analysis.env.find(f_load.first) != dep_analysis.env.end());
@@ -1468,29 +1789,71 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
                 initial_footprint = costs.region_size(f_load.first, f_load_pb);
                 footprint = costs.region_size(f_load.first, alloc_reg);
             }
-            footprint = initial_footprint;
+            if (!footprint.defined()) footprint = initial_footprint;
             if (!footprint.defined()) return GroupAnalysis();
-        }
+            if (!initial_footprint.defined()) initial_footprint = footprint;
 
-        Expr cost_factor =
-            cast<int64_t>(min(1 + footprint * load_slope, (float)balance));
-        per_tile_cost.memory += cost_factor * f_load.second;
+            float load_slope = cost_factor_merge / (64.0f * 1024.0f);
+            // Term 1: initialization cost — bringing data from DRAM to L2
+            // Uses initial_footprint (full pipeline extent) as the cost factor
+            Expr init_cost_f = min(1 + initial_footprint * load_slope, cost_factor_merge);
+            // Term 2: per-load cost — using per-tile footprint as cost factor
+            Expr load_cost_f = min(1 + footprint * load_slope, cost_factor_merge);
+            // Combined: initialization + per-load, amortized by col_tile
+            // (matches reference lines 3014-3022: stage_factor / min(col_tile, max_tile))
+            Expr stage_factor = footprint * init_cost_f + f_load.second * load_cost_f;
+            int max_tile = 16;  // 64 bytes / 4 bytes per float
+            int col_amortize = std::min(col_tile_int, max_tile);
+            if (col_amortize > 1)
+                stage_factor = stage_factor / col_amortize;
+            per_tile_cost.memory += cast<int64_t>(stage_factor);
+        }
+    }
+
+    // Compute occupancy using GPU hardware model
+    float occ = 0.0f;
+    int active_threads = threads_per_block_int;
+    int active_blocks = 1;
+
+    if (target.has_gpu_feature() && threads_per_block_int > 0) {
+        OccupancyResult occ_result = estimate_occupancy(
+            gpu_params, threads_per_block_int, (int)shared_mem_bytes);
+        occ = occ_result.occupancy;
+        active_threads = occ_result.active_threads;
+        active_blocks = occ_result.active_blocks;
     }
 
     // GPU parallelism = total threads (blocks × threads_per_block)
-    Expr parallelism = simplify(estimate_tiles * threads_per_block);
+    Expr parallelism = simplify(estimate_tiles * threads_per_block_int);
 
     GroupAnalysis g_analysis(
         Cost(per_tile_cost.arith * estimate_tiles,
              per_tile_cost.memory * estimate_tiles),
         parallelism);
-    g_analysis.simplify();
 
+    // Fill GPU-specific fields
+    g_analysis.occupancy      = occ;
+    g_analysis.n_threads      = threads_per_block_int;
+    g_analysis.active_threads = active_threads;
+    g_analysis.threads_out    = threads_out_int;
+    g_analysis.shared_mem     = shared_mem_bytes;
+
+    g_analysis.simplify();
     return g_analysis;
 }
 
 pair<map<string, Expr>, Partitioner::GroupAnalysis>
 Partitioner::find_best_tile_config(const Group &g) {
+    const vector<Dim> &dims = get_stage_dims(g.output.func, g.output.stage_num);
+    bool all_rvars = true;
+    for (int i = 0; i < (int)dims.size() - 1; i++) {
+        if (!dims[i].is_rvar()) all_rvars = false;
+    }
+    if (all_rvars || dims.size() <= 1) {
+        map<string, Expr> no_tile;
+        return {no_tile, GroupAnalysis()};
+    }
+
     map<string, Expr> no_tile_config;
     Group no_tile = g;
     no_tile.tile_sizes = no_tile_config;
@@ -1498,8 +1861,7 @@ Partitioner::find_best_tile_config(const Group &g) {
     GroupAnalysis no_tile_analysis = analyze_group(no_tile, false);
     GroupAnalysis best_analysis = no_tile_analysis;
     map<string, Expr> best_config = no_tile_config;
-
-    if (!best_analysis.cost.defined()) return {best_config, best_analysis};
+    bool have_valid = best_analysis.cost.defined();
 
     vector<map<string, Expr>> configs = generate_tile_configs(g.output);
 
@@ -1508,9 +1870,20 @@ Partitioner::find_best_tile_config(const Group &g) {
         new_group.tile_sizes = config;
         GroupAnalysis new_analysis = analyze_group(new_group, false);
 
-        Expr benefit = estimate_benefit(best_analysis, new_analysis, false, true);
-        if (benefit.defined() && can_prove(benefit > 0)) {
-            best_config  = config;
+        if (!new_analysis.defined()) continue;
+
+        // First valid tiled config: accept if threads_out >= 16
+        if (!have_valid && new_analysis.threads_out >= 16) {
+            best_config   = config;
+            best_analysis = new_analysis;
+            have_valid    = true;
+            continue;
+        }
+
+        // Use occupancy-aware benefit for tile comparison
+        Expr benefit = estimate_tile_benefit(best_analysis, new_analysis, false, true);
+        if (benefit.defined() && can_prove(benefit >= 0)) {
+            best_config   = config;
             best_analysis = new_analysis;
         }
     }
@@ -1547,7 +1920,7 @@ Partitioner::choose_candidate_grouping(const vector<pair<string, string>> &cands
             grouping.emplace_back(cand_choice, best_config);
         }
 
-        Expr overall_benefit = estimate_benefit(grouping, false, true);
+        Expr overall_benefit = estimate_benefit(grouping, false, true, level);
         if (overall_benefit.defined() && can_prove(best_benefit < overall_benefit)) {
             best_grouping = grouping;
             best_benefit  = overall_benefit;
@@ -1775,7 +2148,7 @@ Expr Partitioner::estimate_benefit(const GroupAnalysis &old_g, const GroupAnalys
 
 Expr Partitioner::estimate_benefit(
     const vector<pair<GroupingChoice, GroupConfig>> &new_grouping,
-    bool no_redundant_work, bool ensure_parallelism) const {
+    bool no_redundant_work, bool ensure_parallelism, Level level) const {
 
     set<FStage> old_groups;
     GroupAnalysis new_group_analysis(Cost(0, 0), Int(64).max());
@@ -1792,6 +2165,19 @@ Expr Partitioner::estimate_benefit(
             new_group_analysis.cost.memory += analysisg.cost.memory;
             new_group_analysis.parallelism =
                 min(new_group_analysis.parallelism, analysisg.parallelism);
+            // Aggregate GPU fields
+            new_group_analysis.shared_mem += analysisg.shared_mem;
+            new_group_analysis.threads_out =
+                std::min(new_group_analysis.threads_out > 0 ? new_group_analysis.threads_out : analysisg.threads_out,
+                         analysisg.threads_out);
+            new_group_analysis.active_threads =
+                std::min(new_group_analysis.active_threads > 0 ? new_group_analysis.active_threads : analysisg.active_threads,
+                         analysisg.active_threads);
+            new_group_analysis.n_threads =
+                std::max(new_group_analysis.n_threads, analysisg.n_threads);
+            new_group_analysis.occupancy =
+                std::min(new_group_analysis.occupancy > 0.0f ? new_group_analysis.occupancy : analysisg.occupancy,
+                         analysisg.occupancy);
         } else {
             new_group_analysis.cost = Cost();
             new_group_analysis.parallelism = Expr();
@@ -1810,6 +2196,18 @@ Expr Partitioner::estimate_benefit(
             old_group_analysis.cost.memory += analysisg.cost.memory;
             old_group_analysis.parallelism =
                 min(old_group_analysis.parallelism, analysisg.parallelism);
+            old_group_analysis.shared_mem += analysisg.shared_mem;
+            old_group_analysis.threads_out =
+                std::min(old_group_analysis.threads_out > 0 ? old_group_analysis.threads_out : analysisg.threads_out,
+                         analysisg.threads_out);
+            old_group_analysis.active_threads =
+                std::min(old_group_analysis.active_threads > 0 ? old_group_analysis.active_threads : analysisg.active_threads,
+                         analysisg.active_threads);
+            old_group_analysis.n_threads =
+                std::max(old_group_analysis.n_threads, analysisg.n_threads);
+            old_group_analysis.occupancy =
+                std::min(old_group_analysis.occupancy > 0.0f ? old_group_analysis.occupancy : analysisg.occupancy,
+                         analysisg.occupancy);
         } else {
             old_group_analysis.cost = Cost();
             old_group_analysis.parallelism = Expr();
@@ -1818,8 +2216,51 @@ Expr Partitioner::estimate_benefit(
     }
     old_group_analysis.simplify();
 
+    // Use occupancy-aware benefit for FastMem level
+    if (level == Level::FastMem)
+        return estimate_tile_benefit(old_group_analysis, new_group_analysis,
+                                     no_redundant_work, ensure_parallelism);
     return estimate_benefit(old_group_analysis, new_group_analysis,
                             no_redundant_work, ensure_parallelism);
+}
+
+Expr Partitioner::estimate_tile_benefit(const GroupAnalysis &old_g, const GroupAnalysis &new_g,
+                                         bool final_tiles, bool ensure_parallelism) const {
+    if (ensure_parallelism &&
+        (!new_g.parallelism.defined() ||
+         !can_prove(new_g.parallelism >= min_parallelism))) {
+        return Expr();
+    }
+    // Reject if threads_out < 16 (need at least half a warp of useful work)
+    if (ensure_parallelism && new_g.threads_out > 0 && new_g.threads_out < 16) {
+        return Expr();
+    }
+    if (!old_g.cost.defined() || !new_g.cost.defined()) return Expr();
+
+    // Reject if shared memory exceeds limit
+    if (new_g.shared_mem > (int64_t)gpu_cache_size) return Expr();
+    // Reject if threads exceed HW limit
+    if (new_g.n_threads > gpu_params.limit_threads_per_block) return Expr();
+
+    // For final tiles, require warp-aligned thread blocks
+    if (final_tiles && new_g.n_threads > 0 && (new_g.n_threads % 32 != 0)) return Expr();
+
+    Expr mem_benefit, arith_benefit;
+    if (final_tiles && old_g.active_threads > 0 && new_g.active_threads > 0 &&
+        old_g.occupancy > 0.0f && new_g.occupancy > 0.0f) {
+        // Occupancy-weighted benefit: accounts for GPU latency hiding
+        arith_benefit = old_g.cost.arith - new_g.cost.arith;
+        Expr old_mem_eff = cast<float>(old_g.cost.memory) /
+                           cast<float>(Expr(old_g.active_threads) * Expr((int)(old_g.occupancy * 100.0f)));
+        Expr new_mem_eff = cast<float>(new_g.cost.memory) /
+                           cast<float>(Expr(new_g.active_threads) * Expr((int)(new_g.occupancy * 100.0f)));
+        mem_benefit = cast<int64_t>(old_mem_eff - new_mem_eff);
+    } else {
+        mem_benefit = old_g.cost.memory - new_g.cost.memory;
+        arith_benefit = old_g.cost.arith - new_g.cost.arith;
+    }
+
+    return simplify(mem_benefit + arith_benefit);
 }
 
 map<FStage, map<string, Box>> Partitioner::group_storage_bounds() {
