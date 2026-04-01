@@ -120,6 +120,7 @@ tests(GROUPS correctness
       float16_t_neon_op_check.cpp
       for_each_element.cpp
       force_onto_stack.cpp
+      forward_diff.cpp
       func_lifetime.cpp
       func_lifetime_2.cpp
       fuse.cpp

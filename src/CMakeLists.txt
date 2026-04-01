@@ -301,6 +301,7 @@ target_sources(
     FindCalls.cpp
     FindIntrinsics.cpp
     FlattenNestedRamps.cpp
+    ForwardDiff.cpp
     Float16.cpp
     Func.cpp
     Function.cpp
