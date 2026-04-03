@@ -13,15 +13,16 @@
 #ifdef _MSC_VER
 #include <fcntl.h>
 #include <io.h>
-#ifndef STDIN_FILENO
-#define STDIN_FILENO 0
+#include <windows.h>
 #endif
-#ifndef STDOUT_FILENO
-#define STDOUT_FILENO 1
-#endif
-#else
-#include <unistd.h>
-#endif
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/opt.h>
+#include <libswscale/swscale.h>
+}
 
 #include "HalideRuntime.h"
 #include "inconsolata.h"
@@ -151,14 +152,13 @@ T get_value_as(const halide_trace_packet_t &p, int idx) {
 struct PacketAndPayload : public halide_trace_packet_t {
     uint8_t payload[4096];
 
-    static bool read_or_die(void *buf, size_t count) {
+    static bool read_or_die(void *buf, size_t count, FILE *input) {
         char *p = (char *)buf;
         char *p_end = p + count;
         while (p < p_end) {
-            int64_t bytes_read = ::read(STDIN_FILENO, p, p_end - p);
+            size_t bytes_read = fread(p, 1, p_end - p, input);
             if (bytes_read == 0) {
-                return false;  // EOF
-            } else if (bytes_read < 0) {
+                if (feof(input)) return false;  // EOF
                 fail() << "Unable to read packet";
             }
             p += bytes_read;
@@ -167,14 +167,14 @@ struct PacketAndPayload : public halide_trace_packet_t {
         return true;
     }
 
-    bool read() {
+    bool read(FILE *input) {
         constexpr size_t header_size = sizeof(halide_trace_packet_t);
-        if (!read_or_die(this, header_size)) {
+        if (!read_or_die(this, header_size, input)) {
             return false;  // EOF
         }
 
         const size_t payload_size = this->size - header_size;
-        if (payload_size > sizeof(this->payload) || !read_or_die(this->payload, payload_size)) {
+        if (payload_size > sizeof(this->payload) || !read_or_die(this->payload, payload_size, input)) {
             // Shouldn't ever get EOF here
             fail() << "Unable to read packet payload of size " << payload_size;
         }
@@ -287,22 +287,37 @@ std::string usage() {
         R"USAGE(
 HalideTraceViz accepts Halide-generated binary tracing packets from
 stdin, and outputs them as raw 8-bit rgba32 pixel values to
-stdout. You should pipe the output of HalideTraceViz into a video
-encoder or player.
+stdout (raw BGRA32 frames), or encodes directly to a video file when
+-o is given.
 
-E.g. to encode a video:
+E.g. to encode a video on Linux/Mac:
  HL_TARGET=host-trace_all <command to make pipeline> && \
  HL_TRACE_FILE=/dev/stdout <command to run pipeline> | \
- HalideTraceViz -s 1920 1080 -t 10000 <the -f args> | \
- avconv -f rawvideo -pix_fmt bgr32 -s 1920x1080 -i /dev/stdin -c:v h264 output.avi
+ HalideTraceViz -s 1920 1080 -t 10000 -o output.mp4 <the -f args>
 
-To just watch the trace instead of encoding a video replace the last
-line with something like:
- mplayer -demuxer rawvideo -rawvideo w=1920:h=1080:format=rgba:fps=30 -idle -fixed-vo -
+On Windows, use a named pipe for live streaming (no intermediate file).
+Start HalideTraceViz first so it creates the pipe, then run the pipeline:
+ start "" HalideTraceViz --input \\.\pipe\halide_trace -s 1920 1080 -t 10000 -o output.mp4 <the -f args>
+ set HL_TRACE_FILE=\\.\pipe\halide_trace && <command to run pipeline>
+
+To output raw BGRA32 frames to stdout (for piping to an external tool),
+omit -o.
 
 The arguments to HalideTraceViz specify how to lay out and render the
 Funcs of interest. It acts like a stateful drawing API. The following
 parameters should be set zero or one times:
+
+ --input path: Read trace packets from path instead of stdin.
+     On Windows, path may be a named pipe (e.g. \\.\pipe\halide_trace),
+     in which case HalideTraceViz creates the pipe server and waits for
+     the Halide pipeline to connect, enabling live streaming.
+
+ -o filename: Encode the visualization directly to filename using
+     FFmpeg (e.g. output.mp4). If omitted, raw BGRA32 frames are
+     written to stdout.
+
+ --fps N: Frames per second for the encoded video. Defaults to 30.
+     Only used when -o is given.
 
  --size width height: The size of the output frames. Defaults to
      1920x1080.
@@ -850,6 +865,9 @@ void process_args(int argc, char **argv, VizState *state) {
             // Already processed, just continue
         } else if (next == "--verbose" || next == "--no-verbose") {
             // Already processed, just continue
+        } else if (next == "-o" || next == "--fps" || next == "--input") {
+            expect(i + 1 < argc, i);
+            ++i;  // value consumed in main()
         } else {
             expect(false, i);
         }
@@ -1071,9 +1089,211 @@ public:
     }
 };
 
+// -------------------------------------------------------------
+
+struct VideoEncoder {
+    AVFormatContext *fmt_ctx = nullptr;
+    AVCodecContext *codec_ctx = nullptr;
+    AVStream *stream = nullptr;
+    SwsContext *sws_ctx = nullptr;
+    AVFrame *yuv_frame = nullptr;
+    AVPacket *pkt = nullptr;
+    int64_t pts = 0;
+    int width = 0, height = 0;
+
+    VideoEncoder(const std::string &filename, int w, int h, int fps)
+        : width(w), height(h) {
+        if (w % 2 != 0 || h % 2 != 0) {
+            fail() << "Frame dimensions must be even for H.264 encoding (got " << w << "x" << h << ")";
+        }
+
+        av_log_set_level(AV_LOG_WARNING);
+
+        if (avformat_alloc_output_context2(&fmt_ctx, nullptr, nullptr, filename.c_str()) < 0) {
+            fail() << "Could not allocate output context for: " << filename;
+        }
+
+        const AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+        if (!codec) {
+            fail() << "H.264 encoder not found in FFmpeg build";
+        }
+
+        stream = avformat_new_stream(fmt_ctx, nullptr);
+        if (!stream) {
+            fail() << "Could not allocate output stream";
+        }
+
+        codec_ctx = avcodec_alloc_context3(codec);
+        if (!codec_ctx) {
+            fail() << "Could not allocate codec context";
+        }
+
+        codec_ctx->codec_id = AV_CODEC_ID_H264;
+        codec_ctx->width = w;
+        codec_ctx->height = h;
+        codec_ctx->time_base = AVRational{1, fps};
+        codec_ctx->framerate = AVRational{fps, 1};
+        codec_ctx->gop_size = 10;
+        codec_ctx->max_b_frames = 1;
+        codec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+        if (fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER) {
+            codec_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+        }
+
+        av_opt_set(codec_ctx->priv_data, "preset", "fast", 0);
+
+        if (avcodec_open2(codec_ctx, codec, nullptr) < 0) {
+            fail() << "Could not open H.264 codec";
+        }
+
+        stream->time_base = codec_ctx->time_base;
+        if (avcodec_parameters_from_context(stream->codecpar, codec_ctx) < 0) {
+            fail() << "Could not copy codec parameters to stream";
+        }
+
+        if (!(fmt_ctx->oformat->flags & AVFMT_NOFILE)) {
+            if (avio_open(&fmt_ctx->pb, filename.c_str(), AVIO_FLAG_WRITE) < 0) {
+                fail() << "Could not open output file: " << filename;
+            }
+        }
+
+        if (avformat_write_header(fmt_ctx, nullptr) < 0) {
+            fail() << "Error writing output file header";
+        }
+
+        yuv_frame = av_frame_alloc();
+        if (!yuv_frame) {
+            fail() << "Could not allocate video frame";
+        }
+        yuv_frame->format = AV_PIX_FMT_YUV420P;
+        yuv_frame->width = w;
+        yuv_frame->height = h;
+        if (av_frame_get_buffer(yuv_frame, 0) < 0) {
+            fail() << "Could not allocate frame buffer";
+        }
+
+        pkt = av_packet_alloc();
+        if (!pkt) {
+            fail() << "Could not allocate packet";
+        }
+
+        // Input frames are BGRA (B in low byte, A in high byte of uint32_t)
+        sws_ctx = sws_getContext(w, h, AV_PIX_FMT_BGRA,
+                                  w, h, AV_PIX_FMT_YUV420P,
+                                  SWS_BILINEAR, nullptr, nullptr, nullptr);
+        if (!sws_ctx) {
+            fail() << "Could not initialize color space converter";
+        }
+    }
+
+    void encode_frame(const uint32_t *bgra_pixels) {
+        if (av_frame_make_writable(yuv_frame) < 0) {
+            fail() << "Could not make frame writable";
+        }
+        const uint8_t *src_data[1] = {reinterpret_cast<const uint8_t *>(bgra_pixels)};
+        int src_linesize[1] = {width * 4};
+        sws_scale(sws_ctx, src_data, src_linesize, 0, height,
+                  yuv_frame->data, yuv_frame->linesize);
+        yuv_frame->pts = pts++;
+        send_frame(yuv_frame);
+    }
+
+    void finish() {
+        send_frame(nullptr);  // flush encoder
+        av_write_trailer(fmt_ctx);
+    }
+
+    ~VideoEncoder() {
+        if (sws_ctx) sws_freeContext(sws_ctx);
+        if (yuv_frame) av_frame_free(&yuv_frame);
+        if (pkt) av_packet_free(&pkt);
+        if (codec_ctx) avcodec_free_context(&codec_ctx);
+        if (fmt_ctx) {
+            if (!(fmt_ctx->oformat->flags & AVFMT_NOFILE)) {
+                avio_closep(&fmt_ctx->pb);
+            }
+            avformat_free_context(fmt_ctx);
+        }
+    }
+
+    VideoEncoder(const VideoEncoder &) = delete;
+    void operator=(const VideoEncoder &) = delete;
+
+private:
+    void send_frame(AVFrame *frame) {
+        if (avcodec_send_frame(codec_ctx, frame) < 0) {
+            fail() << "Error sending frame to encoder";
+        }
+        int ret;
+        while ((ret = avcodec_receive_packet(codec_ctx, pkt)) >= 0) {
+            av_packet_rescale_ts(pkt, codec_ctx->time_base, stream->time_base);
+            pkt->stream_index = stream->index;
+            if (av_interleaved_write_frame(fmt_ctx, pkt) < 0) {
+                fail() << "Error writing encoded packet";
+            }
+            av_packet_unref(pkt);
+        }
+        if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
+            fail() << "Error receiving encoded packet";
+        }
+    }
+};
+
+// -------------------------------------------------------------
+
+// Open the trace input stream from the given path.
+// On Windows, paths of the form \\.\pipe\<name> create a named pipe server
+// and block until the Halide pipeline connects — enabling live streaming
+// without any intermediate file.  On all other paths (and on non-Windows),
+// the file is simply opened for reading.
+FILE *open_input_stream(const std::string &path) {
+#ifdef _MSC_VER
+    // Named pipe: create the server end, wait for the pipeline to connect,
+    // then wrap the HANDLE in a CRT FILE* so the rest of the code is uniform.
+    if (path.size() >= 9 && path.substr(0, 9) == "\\\\.\\pipe\\") {
+        HANDLE h = CreateNamedPipeA(
+            path.c_str(),
+            PIPE_ACCESS_INBOUND,
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+            /*nMaxInstances=*/1,
+            /*nOutBufferSize=*/0,
+            /*nInBufferSize=*/65536,
+            /*nDefaultTimeOut=*/NMPWAIT_USE_DEFAULT_WAIT,
+            /*lpSecurityAttributes=*/nullptr);
+        if (h == INVALID_HANDLE_VALUE) {
+            fail() << "Could not create named pipe: " << path;
+        }
+        if (!ConnectNamedPipe(h, nullptr) &&
+            GetLastError() != ERROR_PIPE_CONNECTED) {
+            CloseHandle(h);
+            fail() << "Could not connect named pipe: " << path;
+        }
+        int fd = _open_osfhandle(reinterpret_cast<intptr_t>(h), _O_RDONLY | _O_BINARY);
+        if (fd == -1) {
+            CloseHandle(h);
+            fail() << "Could not wrap named pipe handle: " << path;
+        }
+        FILE *f = _fdopen(fd, "rb");
+        if (!f) {
+            fail() << "Could not open named pipe stream: " << path;
+        }
+        return f;
+    }
+#endif
+    FILE *f = fopen(path.c_str(), "rb");
+    if (!f) {
+        fail() << "Could not open input file: " << path;
+    }
+    return f;
+}
+
+// -------------------------------------------------------------
+
 using FlagProcessor = std::function<void(VizState *state)>;
 
-int run(bool ignore_trace_tags, FlagProcessor flag_processor) {
+int run(bool ignore_trace_tags, FlagProcessor flag_processor,
+        FILE *input, const std::string &output_file, int fps) {
     // State that determines how different funcs get drawn
     VizState state;
 
@@ -1085,6 +1305,7 @@ int run(bool ignore_trace_tags, FlagProcessor flag_processor) {
     bool seen_global_config_tag = false;
 
     std::unique_ptr<Surface> surface;
+    std::unique_ptr<VideoEncoder> encoder;
 
     const std::function<void()> finalize_state = [&]() -> void {
         if (is_state_finalized) {
@@ -1190,9 +1411,20 @@ int run(bool ignore_trace_tags, FlagProcessor flag_processor) {
                 surface->composite();
 
                 // Dump the frame
-                int64_t bytes_written = write(STDOUT_FILENO, surface->frame_data(), frame_bytes);
-                if (bytes_written < frame_bytes) {
-                    fail() << "Could not write frame to stdout.";
+                if (!encoder && !output_file.empty()) {
+                    encoder = std::make_unique<VideoEncoder>(
+                        output_file,
+                        state.globals.frame_size.x,
+                        state.globals.frame_size.y,
+                        fps);
+                }
+                if (encoder) {
+                    encoder->encode_frame(surface->frame_data());
+                } else {
+                    size_t bytes_written = fwrite(surface->frame_data(), 1, frame_bytes, stdout);
+                    if (static_cast<int64_t>(bytes_written) < frame_bytes) {
+                        fail() << "Could not write frame to stdout.";
+                    }
                 }
 
                 video_clock += state.globals.timestep;
@@ -1206,7 +1438,7 @@ int run(bool ignore_trace_tags, FlagProcessor flag_processor) {
 
         // Read a tracing packet
         PacketAndPayload p;
-        if (!p.read()) {
+        if (!p.read(input)) {
             end_counter++;
             continue;
         }
@@ -1437,6 +1669,10 @@ int run(bool ignore_trace_tags, FlagProcessor flag_processor) {
         }
     }
 
+    if (encoder) {
+        encoder->finish();
+    }
+
     return 0;
 }
 
@@ -1449,6 +1685,9 @@ int main(int argc, char **argv) {
     }
 
     bool ignore_trace_tags = false;
+    std::string output_file;
+    std::string input_path;
+    int fps = 30;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--help")) {
             std::cout << usage();
@@ -1461,7 +1700,18 @@ int main(int argc, char **argv) {
             verbose = true;
         } else if (!strcmp(argv[i], "--no-verbose")) {
             verbose = false;
+        } else if (!strcmp(argv[i], "-o") && i + 1 < argc) {
+            output_file = argv[++i];
+        } else if (!strcmp(argv[i], "--fps") && i + 1 < argc) {
+            fps = std::stoi(argv[++i]);
+        } else if (!strcmp(argv[i], "--input") && i + 1 < argc) {
+            input_path = argv[++i];
         }
+    }
+
+    FILE *input = stdin;
+    if (!input_path.empty()) {
+        input = open_input_stream(input_path);
     }
 
     FlagProcessor flag_processor = [argc, argv](VizState *state) -> void {
@@ -1469,9 +1719,17 @@ int main(int argc, char **argv) {
     };
 
 #ifdef _MSC_VER
-    _setmode(STDIN_FILENO, _O_BINARY);
-    _setmode(STDOUT_FILENO, _O_BINARY);
+    if (input == stdin) {
+        _setmode(_fileno(stdin), _O_BINARY);
+    }
+    if (output_file.empty()) {
+        _setmode(_fileno(stdout), _O_BINARY);
+    }
 #endif
 
-    run(ignore_trace_tags, flag_processor);
+    run(ignore_trace_tags, flag_processor, input, output_file, fps);
+
+    if (input != stdin) {
+        fclose(input);
+    }
 }
