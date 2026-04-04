@@ -28,7 +28,7 @@
     {
       "name": "ffmpeg",
       "default-features": false,
-      "features": ["avcodec", "avformat", "avutil", "swscale", "x264"]
+      "features": ["avcodec", "avformat", "swscale", "x264"]
     }
   ],
   "features": {
