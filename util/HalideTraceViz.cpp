@@ -11,11 +11,17 @@
 #include <vector>
 
 #ifdef _MSC_VER
+#ifndef NOMINMAX
+#define NOMINMAX  // suppress windows.h min/max macros that clobber std::min/std::max
+#endif
 #include <fcntl.h>
 #include <io.h>
 #include <windows.h>
 #endif
 
+// vcpkg's FFmpeg headers do NOT contain __cplusplus extern "C" guards
+// (verified via grep), so we must wrap them ourselves; otherwise the linker
+// looks up the C functions with C++ name mangling and fails with LNK2019.
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -293,11 +299,11 @@ stdout (raw BGRA32 frames), or encodes directly to a video file when
 E.g. to encode a video on Linux/Mac:
  HL_TARGET=host-trace_all <command to make pipeline> && \
  HL_TRACE_FILE=/dev/stdout <command to run pipeline> | \
- HalideTraceViz -s 1920 1080 -t 10000 -o output.mp4 <the -f args>
+ HalideTraceViz --size 1920 1080 --timestep 10000 -o output.mp4 <the -f args>
 
 On Windows, use a named pipe for live streaming (no intermediate file).
 Start HalideTraceViz first so it creates the pipe, then run the pipeline:
- start "" HalideTraceViz --input \\.\pipe\halide_trace -s 1920 1080 -t 10000 -o output.mp4 <the -f args>
+ start "" HalideTraceViz --input \\.\pipe\halide_trace --size 1920 1080 --timestep 10000 -o output.mp4 <the -f args>
  set HL_TRACE_FILE=\\.\pipe\halide_trace && <command to run pipeline>
 
 To output raw BGRA32 frames to stdout (for piping to an external tool),

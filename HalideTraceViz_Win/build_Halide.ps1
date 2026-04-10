@@ -14,8 +14,9 @@
 #>
 param(
     [ValidateSet('Release', 'Debug', 'RelWithDebInfo')]
-    [string] $Config = 'Release',
-    [int]    $Jobs   = [Environment]::ProcessorCount,
+    [string] $Config   = 'Release',
+    [int]    $Jobs     = [Environment]::ProcessorCount,
+    [string] $LLVMRoot = '',
     [switch] $Reconfigure
 )
 
@@ -59,12 +60,40 @@ if (-not (Test-Path (Join-Path $env:VCPKG_ROOT 'scripts\buildsystems\vcpkg.cmake
     Write-Error "vcpkg toolchain not found under VCPKG_ROOT=$($env:VCPKG_ROOT)"
 }
 
+# --- LLVM auto-detection -----------------------------------------------------
+if (-not $LLVMRoot) {
+    # Look for LLVM_* directories next to the Halide source tree
+    $llvmCandidates = @(Get-ChildItem -Path $HalideRoot -Directory -Filter 'LLVM_*' |
+                        Sort-Object Name -Descending |
+                        Select-Object -ExpandProperty FullName)
+    foreach ($c in $llvmCandidates) {
+        if (Test-Path (Join-Path $c 'lib\cmake\llvm\LLVMConfig.cmake')) {
+            $LLVMRoot = $c
+            Write-Host "  Auto-detected LLVM: $c" -ForegroundColor DarkGray
+            break
+        }
+    }
+}
+
+$LLVMDir  = ''
+$ClangDir = ''
+if ($LLVMRoot) {
+    $LLVMDir  = (Join-Path $LLVMRoot 'lib\cmake\llvm')  -replace '\\', '/'
+    $ClangDir = (Join-Path $LLVMRoot 'lib\cmake\clang') -replace '\\', '/'
+    if (-not (Test-Path (Join-Path $LLVMDir 'LLVMConfig.cmake'))) {
+        Write-Error "LLVMConfig.cmake not found in $LLVMDir"
+    }
+}
+
 Write-Host ""
 Write-Host "  Halide root : $HalideRoot" -ForegroundColor Cyan
 Write-Host "  Build dir   : $BuildDir"   -ForegroundColor Cyan
 Write-Host "  Config      : $Config"     -ForegroundColor Cyan
 Write-Host "  Jobs        : $Jobs"       -ForegroundColor Cyan
 Write-Host "  VCPKG_ROOT  : $env:VCPKG_ROOT" -ForegroundColor Cyan
+if ($LLVMRoot) {
+    Write-Host "  LLVM root   : $LLVMRoot" -ForegroundColor Cyan
+}
 Write-Host ""
 
 # --- Configure ---------------------------------------------------------------
@@ -81,12 +110,19 @@ if (-not (Test-Path $CacheFile)) {
     Write-Host "Configuring with preset 'win64'..." -ForegroundColor Yellow
     Push-Location $HalideRoot
     try {
-        cmake --preset win64 `
-              -DWITH_TUTORIALS=ON  `
-              -DWITH_UTILS=ON      `
-              -DWITH_TESTS=OFF     `
-              -DWITH_DOCS=OFF      `
-              -DWITH_PYTHON_BINDINGS=OFF
+        $cmakeArgs = @(
+            '--preset', 'win64',
+            '-DWITH_TUTORIALS=ON',
+            '-DWITH_UTILS=ON',
+            '-DWITH_TESTS=OFF',
+            '-DWITH_DOCS=OFF',
+            '-DWITH_PYTHON_BINDINGS=OFF'
+        )
+        if ($LLVMDir) {
+            $cmakeArgs += "-DLLVM_DIR=$LLVMDir"
+            $cmakeArgs += "-DClang_DIR=$ClangDir"
+        }
+        cmake @cmakeArgs
         if ($LASTEXITCODE -ne 0) { throw "CMake configure failed (exit $LASTEXITCODE)." }
     } finally {
         Pop-Location

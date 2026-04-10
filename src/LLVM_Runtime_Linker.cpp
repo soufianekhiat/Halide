@@ -181,6 +181,7 @@ DECLARE_CPP_INITMOD(webgpu_dawn)
 DECLARE_CPP_INITMOD(webgpu_emscripten)
 DECLARE_CPP_INITMOD(windows_clock)
 DECLARE_CPP_INITMOD(windows_cuda)
+DECLARE_CPP_INITMOD(windows_fopen)
 DECLARE_CPP_INITMOD(windows_get_symbol)
 DECLARE_CPP_INITMOD(windows_io)
 DECLARE_CPP_INITMOD(windows_opencl)
@@ -1129,9 +1130,13 @@ std::unique_ptr<llvm::Module> get_initial_module_for_target(Target t, llvm::LLVM
                 modules.push_back(get_initmod_alignment_32(c, bits_64, debug));
             }
 
-            // Prefer using fopen_lfs on Linux systems, which calls fopen64() to ensure LFS support.
+            // Prefer fopen_lfs on Linux (calls fopen64() for LFS support).
+            // On Windows, use a custom fopen that handles \\.\pipe\ paths
+            // because the CRT fopen() can't open named pipes.
             if (t.os == Target::Linux) {
                 modules.push_back(get_initmod_fopen_lfs(c, bits_64, debug));
+            } else if (t.os == Target::Windows) {
+                modules.push_back(get_initmod_windows_fopen(c, bits_64, debug));
             } else {
                 modules.push_back(get_initmod_fopen(c, bits_64, debug));
             }

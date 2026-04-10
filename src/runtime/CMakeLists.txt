@@ -94,6 +94,7 @@ set(RUNTIME_CPP
     windows_cuda
     windows_d3d12compute_arm
     windows_d3d12compute_x86
+    windows_fopen
     windows_get_symbol
     windows_io
     windows_opencl

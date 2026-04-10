@@ -53,11 +53,18 @@ param(
     [string] $OutputDir             = (Join-Path $PSScriptRoot 'videos'),
     [int]    $Width                 = 1920,
     [int]    $Height                = 1080,
-    [int]    $Timestep              = 10000,
+    # Halide events per video frame. Small lessons do only a handful of stores,
+    # so the default 10000 in HalideTraceViz's own docs produces a blank flash.
+    # 1 gives one frame per store/load event — most dramatic visualization.
+    [int]    $Timestep              = 1,
     [int]    $Fps                   = 30,
+    # How many frames to hold after the trace ends (so the final image stays
+    # visible briefly at the end of the video). Default: 0.5 seconds' worth.
+    # Pass 0 to disable the hold entirely.
+    [int]    $Hold                  = -1,
     [int]    $PipeConnectTimeoutSec = 10,
     [int]    $LessonTimeoutSec      = 120,
-    [int]    $VizTimeoutSec         = 60,
+    [int]    $VizTimeoutSec         = 300,
     [switch] $OnlyKnownLessons
 )
 
@@ -114,6 +121,9 @@ if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir | Out-Null
 }
 
+# Default $Hold to 0.5 seconds of frames if user didn't override.
+if ($Hold -lt 0) { $Hold = [int]($Fps / 2) }
+
 Write-Host ""
 Write-Host "  HalideTraceViz : $VizExe"     -ForegroundColor Cyan
 Write-Host "  Output dir     : $OutputDir"  -ForegroundColor Cyan
@@ -145,37 +155,66 @@ foreach ($lesson in $Lessons) {
         continue
     }
 
-    # Build HalideTraceViz argument list
+    # Build HalideTraceViz argument list.
+    # Note: process_args only accepts --size / --timestep (not -s/-t).
     $vizArgs = @(
-        '--input', $pipePath,
-        '-o',      $outFile,
-        '-s',      $Width, $Height,
-        '-t',      $Timestep,
-        '--fps',   $Fps,
+        '--input',    $pipePath,
+        '-o',         $outFile,
+        '--size',     $Width, $Height,
+        '--timestep', $Timestep,
+        '--fps',      $Fps,
+        '--hold',     $Hold,
         '--auto_layout'
     )
 
     # Remove stale output if present
     if (Test-Path $outFile) { Remove-Item $outFile -Force }
 
+    # Per-lesson log files for diagnostics
+    $vizStdout    = Join-Path $OutputDir "$name.viz.stdout.log"
+    $vizStderr    = Join-Path $OutputDir "$name.viz.stderr.log"
+    $lessonStdout = Join-Path $OutputDir "$name.lesson.stdout.log"
+    $lessonStderr = Join-Path $OutputDir "$name.lesson.stderr.log"
+
     # 1. Start HalideTraceViz in the background --------------------------------
     $vizProc = Start-Process `
-        -FilePath     $VizExe `
-        -ArgumentList $vizArgs `
+        -FilePath               $VizExe `
+        -ArgumentList           $vizArgs `
         -PassThru `
-        -WindowStyle  Hidden
+        -WindowStyle            Hidden `
+        -RedirectStandardOutput $vizStdout `
+        -RedirectStandardError  $vizStderr
 
     # 2. Wait for the named pipe to be ready ----------------------------------
-    $deadline   = [DateTime]::Now.AddSeconds($PipeConnectTimeoutSec)
-    $pipeReady  = $false
+    # Give HalideTraceViz time to reach CreateNamedPipe + start servicing
+    # connections. Poll with Test-Path but then sleep an extra settle time:
+    # Test-Path can see the path immediately after the process image starts,
+    # before the pipe server is actually ready to accept a client.
+    $deadline  = [DateTime]::Now.AddSeconds($PipeConnectTimeoutSec)
+    $pipeReady = $false
     while ([DateTime]::Now -lt $deadline) {
-        if (Test-Path $pipePath) { $pipeReady = $true; break }
+        if ($vizProc.HasExited) { break }
+        if ([System.IO.Directory]::GetFiles('\\.\pipe\') -contains $pipePath) {
+            $pipeReady = $true
+            break
+        }
         Start-Sleep -Milliseconds 100
     }
+    # Settle: give HalideTraceViz a moment to reach ConnectNamedPipe even
+    # after the pipe is visible in the namespace.
+    if ($pipeReady) { Start-Sleep -Milliseconds 500 }
 
     if (-not $pipeReady) {
-        Write-Host "  [FAIL] Named pipe did not appear within ${PipeConnectTimeoutSec}s." -ForegroundColor Red
-        if (-not $vizProc.HasExited) { $vizProc.Kill() }
+        if ($vizProc.HasExited) {
+            Write-Host "  [FAIL] HalideTraceViz exited (code $($vizProc.ExitCode)) before creating pipe." -ForegroundColor Red
+        } else {
+            Write-Host "  [FAIL] Named pipe did not appear within ${PipeConnectTimeoutSec}s." -ForegroundColor Red
+            $vizProc.Kill()
+        }
+        if (Test-Path $vizStderr) {
+            $err = Get-Content $vizStderr -Raw
+            if ($err) { Write-Host "  --- HalideTraceViz stderr ---`n$err" -ForegroundColor DarkRed }
+        }
         $Results.Add([PSCustomObject]@{ Lesson = $name; Status = 'FAILED (pipe timeout)'; SizeMB = ''; Output = '' })
         continue
     }
@@ -190,15 +229,20 @@ foreach ($lesson in $Lessons) {
     $lessonOk = $false
     try {
         $lessonProc = Start-Process `
-            -FilePath    $exePath `
+            -FilePath               $exePath `
             -PassThru `
-            -WindowStyle Hidden
+            -WindowStyle            Hidden `
+            -RedirectStandardOutput $lessonStdout `
+            -RedirectStandardError  $lessonStderr
 
         if (-not $lessonProc.WaitForExit($LessonTimeoutSec * 1000)) {
             Write-Host "  [WARN] Lesson timed out after ${LessonTimeoutSec}s - killing." -ForegroundColor Yellow
             $lessonProc.Kill()
         } else {
             $lessonOk = ($lessonProc.ExitCode -eq 0)
+            if (-not $lessonOk) {
+                Write-Host "  [WARN] Lesson exited with code $($lessonProc.ExitCode)" -ForegroundColor Yellow
+            }
         }
     } finally {
         if ($null -eq $savedTrace)  { Remove-Item Env:HL_TRACE_FILE -ErrorAction SilentlyContinue }
@@ -216,6 +260,7 @@ foreach ($lesson in $Lessons) {
     }
 
     # 5. Report ---------------------------------------------------------------
+    $vizExitStr = if ($vizProc.HasExited) { "$($vizProc.ExitCode)" } else { 'still-running' }
     if (Test-Path $outFile) {
         $sizeMB = [Math]::Round((Get-Item $outFile).Length / 1MB, 2)
         $status = if ($lessonOk) { 'OK' } else { 'LESSON_ERROR' }
@@ -223,7 +268,19 @@ foreach ($lesson in $Lessons) {
         Write-Host "  [$status] $outFile  ($sizeMB MB)" -ForegroundColor $color
         $Results.Add([PSCustomObject]@{ Lesson = $name; Status = $status; SizeMB = $sizeMB; Output = $outFile })
     } else {
-        Write-Host "  [FAIL] No output file produced." -ForegroundColor Red
+        Write-Host "  [FAIL] No output file  viz_exit=$vizExitStr  lesson_exit=$(if($lessonProc){$lessonProc.ExitCode}else{'?'})" -ForegroundColor Red
+        if (Test-Path $vizStderr) {
+            $err = Get-Content $vizStderr -Raw
+            if ($err) { Write-Host "  --- HalideTraceViz stderr ---`n$err" -ForegroundColor DarkRed }
+        }
+        if (Test-Path $lessonStdout) {
+            $out = Get-Content $lessonStdout -Raw
+            if ($out) { Write-Host "  --- Lesson stdout ---`n$out" -ForegroundColor DarkYellow }
+        }
+        if (Test-Path $lessonStderr) {
+            $err = Get-Content $lessonStderr -Raw
+            if ($err) { Write-Host "  --- Lesson stderr ---`n$err" -ForegroundColor DarkRed }
+        }
         $Results.Add([PSCustomObject]@{ Lesson = $name; Status = 'FAILED (no output)'; SizeMB = ''; Output = '' })
     }
 }
@@ -235,9 +292,9 @@ Write-Host "  Summary" -ForegroundColor White
 Write-Host ("=" * 70)
 $Results | Format-Table -AutoSize -Property Lesson, Status, SizeMB, Output
 
-$ok      = ($Results | Where-Object { $_.Status -eq 'OK' }).Count
-$skipped = ($Results | Where-Object { $_.Status -like 'SKIPPED*' }).Count
-$failed  = ($Results | Where-Object { $_.Status -notlike 'OK*' -and $_.Status -notlike 'SKIPPED*' }).Count
+$ok      = @($Results | Where-Object { $_.Status -eq 'OK' }).Count
+$skipped = @($Results | Where-Object { $_.Status -like 'SKIPPED*' }).Count
+$failed  = @($Results | Where-Object { $_.Status -notlike 'OK*' -and $_.Status -notlike 'SKIPPED*' }).Count
 
 Write-Host "  OK: $ok   Skipped: $skipped   Failed: $failed" -ForegroundColor $(
     if ($failed -gt 0) { 'Yellow' } else { 'Green' })
