@@ -24,7 +24,12 @@
       ]
     },
     "spirv-headers",
-    "vulkan-headers"
+    "vulkan-headers",
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": ["avcodec", "avformat", "swscale", "x264"]
+    }
   ],
   "features": {
     "developer": {
