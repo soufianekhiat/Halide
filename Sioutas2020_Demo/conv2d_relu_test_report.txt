@@ -1,0 +1,479 @@
+
+============================================================
+  Demo: Conv2D + ReLU  CO=24 W=100 H=80 N=5 CI=120 k=3x3
+============================================================
+
+--- Schedules (CUDA: x86-64-windows-avx-avx2-cuda-f16c-fma-sse41) ---
+
+-- Sioutas2020 (CUDA) --------------------------------
+// Sioutas2020 autoscheduler -- target: x86-64-windows-avx-avx2-cuda-f16c-fma-sse41
+
+// 2 function(s) to schedule:
+cr_conv_sc.gpu_tile(c, x, xo, yo, xi, yi, 16, 16).compute_root(); // init
+cr_conv_sc.update(0).gpu_tile(c, x, uxo, uyo, uxi, uyi, 16, 16);
+cr_relu_sc.gpu_tile(c, x, xo, yo, xi, yi, 16, 16).compute_root();
+
+
+-- Anderson2021 (CUDA) -------------------------------
+auto pipeline = get_pipeline();
+Func cr_relu_ac = pipeline.get_func(4);
+Func cr_conv_ac = pipeline.get_func(3);
+Var c(cr_relu_ac.get_schedule().dims()[0].var);
+Var ci("ci");
+Var n(cr_relu_ac.get_schedule().dims()[3].var);
+Var x(cr_relu_ac.get_schedule().dims()[1].var);
+Var xi("xi");
+Var y(cr_relu_ac.get_schedule().dims()[2].var);
+Var yi("yi");
+Var yii("yii");
+RVar r_x(cr_conv_ac.update(0).get_schedule().dims()[0].var);
+RVar r_y(cr_conv_ac.update(0).get_schedule().dims()[1].var);
+RVar r_z(cr_conv_ac.update(0).get_schedule().dims()[2].var);
+Var ci_serial_outer("ci_serial_outer");
+Var c_serial_outer("c_serial_outer");
+Var xi_serial_outer("xi_serial_outer");
+Var x_serial_outer("x_serial_outer");
+Var yi_serial_outer("yi_serial_outer");
+Var y_serial_outer("y_serial_outer");
+cr_relu_ac
+    .split(c, c, ci, 24, TailStrategy::ShiftInwards)
+    .split(x, x, xi, 4, TailStrategy::ShiftInwards)
+    .split(y, y, yi, 16, TailStrategy::ShiftInwards)
+    .split(yi, yi, yii, 4, TailStrategy::ShiftInwards)
+    .unroll(yii)
+    .compute_root()
+    .reorder(yii, ci, xi, yi, c, x, y, n)
+    .gpu_blocks(c)
+    .gpu_blocks(x)
+    .fuse(y, n, y)
+    .gpu_blocks(y)
+    .split(ci, ci_serial_outer, ci, 24, TailStrategy::GuardWithIf)
+    .gpu_threads(ci)
+    .split(xi, xi_serial_outer, xi, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(xi)
+    .split(yi, yi_serial_outer, yi, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(yi);
+cr_conv_ac.update(0)
+    .split(y, y, yi, 2, TailStrategy::GuardWithIf)
+    .unroll(yi)
+    .reorder(yi, r_x, r_y, r_z, c, x, y, n)
+    .split(c, c_serial_outer, c, 24, TailStrategy::GuardWithIf)
+    .gpu_threads(c)
+    .split(x, x_serial_outer, x, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(x)
+    .split(y, y_serial_outer, y, 8, TailStrategy::GuardWithIf)
+    .gpu_threads(y);
+cr_conv_ac
+    .split(y, y, yi, 2, TailStrategy::ShiftInwards)
+    .unroll(yi)
+    .compute_at(cr_relu_ac, c)
+    .reorder(yi, c, x, y, n)
+    .split(c, c_serial_outer, c, 24, TailStrategy::GuardWithIf)
+    .gpu_threads(c)
+    .split(x, x_serial_outer, x, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(x)
+    .split(y, y_serial_outer, y, 8, TailStrategy::GuardWithIf)
+    .gpu_threads(y);
+cr_conv_ac.in(cr_relu_ac).store_in(MemoryType::Register).compute_at(cr_relu_ac, ci)
+    .bound_extent(c, 1)
+    .unroll(c)
+    .bound_extent(x, 1)
+    .unroll(x)
+    .bound_extent(y, 4)
+    .unroll(y)
+    .bound_extent(n, 1)
+    .unroll(n);
+
+
+-- Li2018 (CUDA) -------------------------------------
+cr_relu_lc.compute_root()
+    .split(x,v113,v114,64,ShiftInwards)
+    .fuse(c,v113,c)
+    .fuse(c,y,c)
+    .fuse(c,n,c)
+    .reorder(v114,c)
+    .reorder_storage(x,c,y,n)
+    .gpu_blocks(c)
+    .gpu_threads(v114)
+;
+cr_conv_lc.compute_root()
+    .split(x,v115,v116,64,ShiftInwards)
+    .fuse(c,v115,c)
+    .fuse(c,y,c)
+    .fuse(c,n,c)
+    .reorder(v116,c)
+    .reorder_storage(x,c,y,n)
+    .gpu_blocks(c)
+    .gpu_threads(v116)
+;
+cr_conv_lc.update(0)
+    .split(x,v117,v118,64,GuardWithIf)
+    .fuse(c,v117,c)
+    .fuse(c,y,c)
+    .fuse(c,n,c)
+    .reorder(v118,c)
+    .gpu_blocks(c)
+    .gpu_threads(v118)
+;
+
+
+--- Schedules (OpenCL: x86-64-windows-avx-avx2-f16c-fma-opencl-sse41) ---
+
+-- Sioutas2020 (OpenCL) ------------------------------
+// Sioutas2020 autoscheduler -- target: x86-64-windows-avx-avx2-f16c-fma-opencl-sse41
+
+// 2 function(s) to schedule:
+cr_conv_so.gpu_tile(c, x, xo, yo, xi, yi, 16, 16).compute_root(); // init
+cr_conv_so.update(0).gpu_tile(c, x, uxo, uyo, uxi, uyi, 16, 16);
+cr_relu_so.gpu_tile(c, x, xo, yo, xi, yi, 16, 16).compute_root();
+
+
+-- Anderson2021 (OpenCL) -----------------------------
+auto pipeline = get_pipeline();
+Func cr_relu_ao = pipeline.get_func(4);
+Func cr_conv_ao = pipeline.get_func(3);
+Var c(cr_relu_ao.get_schedule().dims()[0].var);
+Var ci("ci");
+Var n(cr_relu_ao.get_schedule().dims()[3].var);
+Var x(cr_relu_ao.get_schedule().dims()[1].var);
+Var xi("xi");
+Var y(cr_relu_ao.get_schedule().dims()[2].var);
+Var yi("yi");
+Var yii("yii");
+RVar r_x(cr_conv_ao.update(0).get_schedule().dims()[0].var);
+RVar r_y(cr_conv_ao.update(0).get_schedule().dims()[1].var);
+RVar r_z(cr_conv_ao.update(0).get_schedule().dims()[2].var);
+Var ci_serial_outer("ci_serial_outer");
+Var c_serial_outer("c_serial_outer");
+Var xi_serial_outer("xi_serial_outer");
+Var x_serial_outer("x_serial_outer");
+Var yi_serial_outer("yi_serial_outer");
+Var y_serial_outer("y_serial_outer");
+cr_relu_ao
+    .split(c, c, ci, 24, TailStrategy::ShiftInwards)
+    .split(x, x, xi, 4, TailStrategy::ShiftInwards)
+    .split(y, y, yi, 16, TailStrategy::ShiftInwards)
+    .split(yi, yi, yii, 4, TailStrategy::ShiftInwards)
+    .unroll(yii)
+    .compute_root()
+    .reorder(yii, ci, xi, yi, c, x, y, n)
+    .gpu_blocks(c)
+    .gpu_blocks(x)
+    .fuse(y, n, y)
+    .gpu_blocks(y)
+    .split(ci, ci_serial_outer, ci, 24, TailStrategy::GuardWithIf)
+    .gpu_threads(ci)
+    .split(xi, xi_serial_outer, xi, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(xi)
+    .split(yi, yi_serial_outer, yi, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(yi);
+cr_conv_ao.update(0)
+    .split(y, y, yi, 2, TailStrategy::GuardWithIf)
+    .unroll(yi)
+    .reorder(yi, r_x, r_y, r_z, c, x, y, n)
+    .split(c, c_serial_outer, c, 24, TailStrategy::GuardWithIf)
+    .gpu_threads(c)
+    .split(x, x_serial_outer, x, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(x)
+    .split(y, y_serial_outer, y, 8, TailStrategy::GuardWithIf)
+    .gpu_threads(y);
+cr_conv_ao
+    .split(y, y, yi, 2, TailStrategy::ShiftInwards)
+    .unroll(yi)
+    .compute_at(cr_relu_ao, c)
+    .reorder(yi, c, x, y, n)
+    .split(c, c_serial_outer, c, 24, TailStrategy::GuardWithIf)
+    .gpu_threads(c)
+    .split(x, x_serial_outer, x, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(x)
+    .split(y, y_serial_outer, y, 8, TailStrategy::GuardWithIf)
+    .gpu_threads(y);
+cr_conv_ao.in(cr_relu_ao).store_in(MemoryType::Register).compute_at(cr_relu_ao, ci)
+    .bound_extent(c, 1)
+    .unroll(c)
+    .bound_extent(x, 1)
+    .unroll(x)
+    .bound_extent(y, 4)
+    .unroll(y)
+    .bound_extent(n, 1)
+    .unroll(n);
+
+
+-- Li2018 (OpenCL) -----------------------------------
+cr_relu_lo.compute_root()
+    .split(x,v232,v233,64,ShiftInwards)
+    .fuse(c,v232,c)
+    .fuse(c,y,c)
+    .fuse(c,n,c)
+    .reorder(v233,c)
+    .reorder_storage(x,c,y,n)
+    .gpu_blocks(c)
+    .gpu_threads(v233)
+;
+cr_conv_lo.compute_root()
+    .split(x,v234,v235,64,ShiftInwards)
+    .fuse(c,v234,c)
+    .fuse(c,y,c)
+    .fuse(c,n,c)
+    .reorder(v235,c)
+    .reorder_storage(x,c,y,n)
+    .gpu_blocks(c)
+    .gpu_threads(v235)
+;
+cr_conv_lo.update(0)
+    .split(x,v236,v237,64,GuardWithIf)
+    .fuse(c,v236,c)
+    .fuse(c,y,c)
+    .fuse(c,n,c)
+    .reorder(v237,c)
+    .gpu_blocks(c)
+    .gpu_threads(v237)
+;
+
+
+--- Schedules (D3D12Compute: x86-64-windows-avx-avx2-d3d12compute-f16c-fma-sse41) ---
+
+-- Sioutas2020 (D3D12) -------------------------------
+// Sioutas2020 autoscheduler -- target: x86-64-windows-avx-avx2-d3d12compute-f16c-fma-sse41
+
+// 2 function(s) to schedule:
+cr_conv_sd.gpu_tile(c, x, xo, yo, xi, yi, 16, 16).compute_root(); // init
+cr_conv_sd.update(0).gpu_tile(c, x, uxo, uyo, uxi, uyi, 16, 16);
+cr_relu_sd.gpu_tile(c, x, xo, yo, xi, yi, 16, 16).compute_root();
+
+
+-- Anderson2021 (D3D12) ------------------------------
+auto pipeline = get_pipeline();
+Func cr_relu_ad = pipeline.get_func(4);
+Func cr_conv_ad = pipeline.get_func(3);
+Var c(cr_relu_ad.get_schedule().dims()[0].var);
+Var ci("ci");
+Var n(cr_relu_ad.get_schedule().dims()[3].var);
+Var x(cr_relu_ad.get_schedule().dims()[1].var);
+Var xi("xi");
+Var y(cr_relu_ad.get_schedule().dims()[2].var);
+Var yi("yi");
+Var yii("yii");
+RVar r_x(cr_conv_ad.update(0).get_schedule().dims()[0].var);
+RVar r_y(cr_conv_ad.update(0).get_schedule().dims()[1].var);
+RVar r_z(cr_conv_ad.update(0).get_schedule().dims()[2].var);
+Var ci_serial_outer("ci_serial_outer");
+Var c_serial_outer("c_serial_outer");
+Var xi_serial_outer("xi_serial_outer");
+Var x_serial_outer("x_serial_outer");
+Var yi_serial_outer("yi_serial_outer");
+Var y_serial_outer("y_serial_outer");
+cr_relu_ad
+    .split(c, c, ci, 24, TailStrategy::ShiftInwards)
+    .split(x, x, xi, 4, TailStrategy::ShiftInwards)
+    .split(y, y, yi, 16, TailStrategy::ShiftInwards)
+    .split(yi, yi, yii, 4, TailStrategy::ShiftInwards)
+    .unroll(yii)
+    .compute_root()
+    .reorder(yii, ci, xi, yi, c, x, y, n)
+    .gpu_blocks(c)
+    .gpu_blocks(x)
+    .fuse(y, n, y)
+    .gpu_blocks(y)
+    .split(ci, ci_serial_outer, ci, 24, TailStrategy::GuardWithIf)
+    .gpu_threads(ci)
+    .split(xi, xi_serial_outer, xi, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(xi)
+    .split(yi, yi_serial_outer, yi, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(yi);
+cr_conv_ad.update(0)
+    .split(y, y, yi, 2, TailStrategy::GuardWithIf)
+    .unroll(yi)
+    .reorder(yi, r_x, r_y, r_z, c, x, y, n)
+    .split(c, c_serial_outer, c, 24, TailStrategy::GuardWithIf)
+    .gpu_threads(c)
+    .split(x, x_serial_outer, x, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(x)
+    .split(y, y_serial_outer, y, 8, TailStrategy::GuardWithIf)
+    .gpu_threads(y);
+cr_conv_ad
+    .split(y, y, yi, 2, TailStrategy::ShiftInwards)
+    .unroll(yi)
+    .compute_at(cr_relu_ad, c)
+    .reorder(yi, c, x, y, n)
+    .split(c, c_serial_outer, c, 24, TailStrategy::GuardWithIf)
+    .gpu_threads(c)
+    .split(x, x_serial_outer, x, 4, TailStrategy::GuardWithIf)
+    .gpu_threads(x)
+    .split(y, y_serial_outer, y, 8, TailStrategy::GuardWithIf)
+    .gpu_threads(y);
+cr_conv_ad.in(cr_relu_ad).store_in(MemoryType::Register).compute_at(cr_relu_ad, ci)
+    .bound_extent(c, 1)
+    .unroll(c)
+    .bound_extent(x, 1)
+    .unroll(x)
+    .bound_extent(y, 4)
+    .unroll(y)
+    .bound_extent(n, 1)
+    .unroll(n);
+
+
+-- Li2018 (D3D12) ------------------------------------
+cr_relu_ld.compute_root()
+    .split(x,v351,v352,64,ShiftInwards)
+    .fuse(c,v351,c)
+    .fuse(c,y,c)
+    .fuse(c,n,c)
+    .reorder(v352,c)
+    .reorder_storage(x,c,y,n)
+    .gpu_blocks(c)
+    .gpu_threads(v352)
+;
+cr_conv_ld.compute_root()
+    .split(x,v353,v354,64,ShiftInwards)
+    .fuse(c,v353,c)
+    .fuse(c,y,c)
+    .fuse(c,n,c)
+    .reorder(v354,c)
+    .reorder_storage(x,c,y,n)
+    .gpu_blocks(c)
+    .gpu_threads(v354)
+;
+cr_conv_ld.update(0)
+    .split(x,v355,v356,64,GuardWithIf)
+    .fuse(c,v355,c)
+    .fuse(c,y,c)
+    .fuse(c,n,c)
+    .reorder(v356,c)
+    .gpu_blocks(c)
+    .gpu_threads(v356)
+;
+
+
+--- Schedules (CPU: x86-64-windows-avx-avx2-f16c-fma-sse41) ---
+
+-- Adams2019 (CPU) -----------------------------------
+Func cr_relu_a2 = pipeline.get_func(4);
+Func cr_conv_a2 = pipeline.get_func(3);
+Var c(cr_relu_a2.get_schedule().dims()[0].var);
+Var ci("ci");
+Var n(cr_relu_a2.get_schedule().dims()[3].var);
+Var x(cr_relu_a2.get_schedule().dims()[1].var);
+Var xi("xi");
+Var y(cr_relu_a2.get_schedule().dims()[2].var);
+Var yi("yi");
+RVar r_x(cr_conv_a2.update(0).get_schedule().dims()[0].var);
+RVar r_y(cr_conv_a2.update(0).get_schedule().dims()[1].var);
+RVar r_z(cr_conv_a2.update(0).get_schedule().dims()[2].var);
+cr_relu_a2
+    .split(x, x, xi, 2, TailStrategy::ShiftInwards)
+    .split(c, c, ci, 8, TailStrategy::ShiftInwards)
+    .split(y, y, yi, 4, TailStrategy::ShiftInwards)
+    .unroll(xi)
+    .unroll(yi)
+    .vectorize(ci)
+    .compute_root()
+    .reorder({ci, xi, yi, c, y, x, n})
+    .fuse(x, n, x)
+    .parallel(x);
+cr_conv_a2.update(0)
+    .split(c, c, ci, 8, TailStrategy::GuardWithIf)
+    .unroll(x)
+    .unroll(y)
+    .vectorize(ci)
+    .reorder({ci, c, x, y, n, r_x, r_y, r_z});
+cr_conv_a2
+    .store_in(MemoryType::Stack)
+    .split(c, c, ci, 8, TailStrategy::ShiftInwards)
+    .unroll(x)
+    .unroll(y)
+    .vectorize(ci)
+    .compute_at(cr_relu_a2, c)
+    .reorder({ci, c, x, y, n});
+
+
+-- Mullapudi2016 (CPU) -------------------------------
+Var c_vi("c_vi");
+Var c_vo("c_vo");
+
+Func cr_conv_m = pipeline.get_func(3);
+Func cr_relu_m = pipeline.get_func(4);
+
+{
+    Var c = cr_conv_m.args()[0];
+    Var x = cr_conv_m.args()[1];
+    RVar r$x(cr_conv_m.update(0).get_schedule().rvars()[0].var);
+    RVar r$y(cr_conv_m.update(0).get_schedule().rvars()[1].var);
+    RVar r$z(cr_conv_m.update(0).get_schedule().rvars()[2].var);
+    cr_conv_m
+        .compute_at(cr_relu_m, x)
+        .split(c, c_vo, c_vi, 8)
+        .vectorize(c_vi);
+    cr_conv_m.update(0)
+        .reorder(c, x, r$x, r$y, y, r$z, n)
+        .split(c, c_vo, c_vi, 8, TailStrategy::GuardWithIf)
+        .vectorize(c_vi);
+}
+{
+    Var c = cr_relu_m.args()[0];
+    Var y = cr_relu_m.args()[2];
+    Var n = cr_relu_m.args()[3];
+    cr_relu_m
+        .compute_root()
+        .split(c, c_vo, c_vi, 8)
+        .vectorize(c_vi)
+        .parallel(n)
+        .parallel(y);
+}
+
+
+
+--- Schedule Statistics (GPU target: CUDA) ---
++--------------------+------------+------------+------------+------------+------------+
+| Metric             | S2020      | A2021      | A2019      | Li2018     | M2016      |
++--------------------+------------+------------+------------+------------+------------+
+| Lines              | 6          | 68         | 37         | 29         | 33         |
+| gpu_tile           | 3          | 0          | 0          | 0          | 0          |
+| compute_root       | 2          | 1          | 1          | 2          | 1          |
+| parallel           | 0          | 0          | 1          | 0          | 2          |
+| vectorize          | 0          | 0          | 3          | 0          | 3          |
++--------------------+------------+------------+------------+------------+------------+
+
+    Benchmarking Sioutas2020 on CPU...
+    Benchmarking Adams2019 on CPU...
+    Benchmarking Li2018 on CPU...
+    Benchmarking Mullapudi2016 on CPU...
+
+--- CPU Performance Benchmark (target: x86-64-windows-avx-avx2-f16c-fma-sse41) ---
+    Note: Anderson2021 requires GPU hardware; no CPU benchmark.
++--------------------+------------+------------+------------+------------+------------+
+| Scheduler          | Time(us)   | vs S2020   | Scheduler  | Time(us)   | vs S2020   |
++--------------------+------------+------------+------------+------------+------------+
+| Sioutas2020        | N/A        | N/A        | Anderson2021 | N/A        | GPU-only   |
+| Adams2019          | 187us      | N/A        | Li2018     | 378us      | N/A        |
+| Mullapudi2016      | N/A        | N/A        |            |            |            |
++--------------------+------------+------------+------------+------------+------------+
+
+--- GPU Schedule Analysis (CUDA target: x86-64-windows-avx-avx2-cuda-f16c-fma-sse41) ---
+    GPU primitives used by each scheduler (from CUDA schedule above):
+    Sioutas2020:            gpu_tile=3  compute_root=2  gpu_single_thread=0
+    Anderson2021:           gpu_tile=0  compute_root=1  gpu_single_thread=0
+    Li2018:                 gpu_tile=0  compute_root=2  gpu_single_thread=0
+    Adams2019: CPU-only scheduler (no GPU primitives).
+    Mullapudi2016: CPU scheduler shown above; GPU via experimental_gpu_schedule.
+    Sioutas2020 uses gpu_tile() -- explicit 2D CUDA block tiling per
+    the TACO 2020 paper.  Anderson2021/Li2018 use fine-grained
+    gpu_blocks()+gpu_threads() search.
+    (GPU execution benchmark: set HL_GPU_BENCH=1 to enable.)
+
+    Warming up CUDA driver (may take 1-5 min on Optimus)...
+    CUDA driver ready.
+    Benchmarking Sioutas2020 on GPU...
+    Benchmarking Anderson2021 on GPU...
+    Benchmarking Li2018 on GPU...
+    Mullapudi2016 GPU benchmark skipped (DLL stack overrun with experimental_gpu_schedule).
+
+--- GPU Performance Benchmark (target: x86-64-windows-avx-avx2-cuda-cuda_capability_86-f16c-fma-sse41) ---
++--------------------+------------+------------+------------+------------+------------+
+| Scheduler          | Time(us)   | vs S2020   | Scheduler  | Time(us)   | vs S2020   |
++--------------------+------------+------------+------------+------------+------------+
+| Sioutas2020        | 939us      | 1.00x(base) | Anderson2021 | 38us       | 24.85x     |
+| Li2018             | 22us       | 43.66x     | Mullapudi(GPU) | N/A        | N/A        |
+| Adams2019          | N/A        | CPU-only   |            |            |            |
++--------------------+------------+------------+------------+------------+------------+
+
