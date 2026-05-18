@@ -49,7 +49,7 @@ install(TARGETS Halide Halide_Generator Halide_GenGen
         FILE_SET HEADERS COMPONENT Halide_Development)
 
 if (WITH_AUTOSCHEDULERS)
-    set(autoschedulers Halide_Adams2019 Halide_Li2018 Halide_Mullapudi2016 Halide_Anderson2021)
+    set(autoschedulers Halide_Adams2019 Halide_Li2018 Halide_Mullapudi2016 Halide_Anderson2021 Halide_Sioutas2020)
 
     install(TARGETS ${autoschedulers}
             EXPORT Halide_Interfaces

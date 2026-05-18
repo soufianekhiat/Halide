@@ -43,6 +43,13 @@ endif ()
 option(Halide_LLVM_SHARED_LIBS "Enable to link to shared libLLVM" "${Halide_LLVM_SHARED_LIBS}")
 
 if (LLVM_FOUND)
+    # CMake 4.x is strict about backslash escapes in quoted strings. LLVMConfig.cmake
+    # sets LLVM_DIR / LLVM_INSTALL_PREFIX with native paths (backslashes on Windows),
+    # which then trip parsers in wrappers like vcpkg.cmake when these vars get
+    # substituted into find_package ARGN. Normalize to forward slashes here.
+    file(TO_CMAKE_PATH "${LLVM_DIR}" LLVM_DIR)
+    file(TO_CMAKE_PATH "${LLVM_INSTALL_PREFIX}" LLVM_INSTALL_PREFIX)
+
     # Package maintainers have some "interesting" ideas as to how they should
     # lay out the -dev packages, especially when they want to support multiple
     # parallel versions. These hints take effect at a lower precedence than
