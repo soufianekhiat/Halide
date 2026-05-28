@@ -178,7 +178,7 @@ ci-llvm-22 = [
 ]
 ci-llvm-main = [
     { name = "cmake" },
-    { name = "halide-llvm", version = "23.0.0.dev93271+g36e1633e", source = { registry = "https://pypi.halide-lang.org/simple" } },
+    { name = "halide-llvm", version = "23.0.0.dev94237+gf95ccbae", source = { registry = "https://pypi.halide-lang.org/simple" } },
     { name = "ninja" },
     { name = "onnx", marker = "platform_machine != 'armv7l' and platform_machine != 'armv8l'" },
     { name = "pre-commit" },
@@ -346,7 +346,7 @@ wheels = [
 
 [[package]]
 name = "halide-llvm"
-version = "23.0.0.dev93271+g36e1633e"
+version = "23.0.0.dev94237+gf95ccbae"
 source = { registry = "https://pypi.halide-lang.org/simple" }
 resolution-markers = [
     "(python_full_version >= '3.11' and platform_machine == 'armv7l' and sys_platform != 'armv7l' and sys_platform != 'armv8l') or (python_full_version >= '3.11' and platform_machine == 'armv8l' and sys_platform != 'armv7l' and sys_platform != 'armv8l')",
@@ -363,14 +363,14 @@ resolution-markers = [
     "(python_full_version < '3.11' and platform_machine != 'armv7l' and platform_machine != 'armv8l' and sys_platform == 'armv7l') or (python_full_version < '3.11' and platform_machine != 'armv7l' and platform_machine != 'armv8l' and sys_platform == 'armv8l')",
 ]
 wheels = [
-    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev93271+g36e1633e-py3-none-macosx_11_0_arm64.whl", hash = "sha256:5cca5bc2a131fbb4596387bc4aae5ea10929937eb8ba67e665da86f2d9a425d8" },
-    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev93271+g36e1633e-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:9f0f96d729577aca32760ce10a2338783f4b1c4695760298223cbff31cdead44" },
-    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev93271+g36e1633e-py3-none-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:a5a684748d31c904c0f89b9fab860d092583ba5668e44ba4c105d05bd409e227" },
-    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev93271+g36e1633e-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:0e58f0cfc7c67b896937d3653c2e837fe726e73964732be89a0a38e3feea16c0" },
-    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev93271+g36e1633e-py3-none-manylinux_2_28_i686.whl", hash = "sha256:26d365b4bd19abb8005c363cfb919d6630015a66ead15353dc4cb3b4e34da153" },
-    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev93271+g36e1633e-py3-none-manylinux_2_31_armv7l.whl", hash = "sha256:2972611030563e986247d51a78057a1876abafa7dfb1633da712874bd9625f2a" },
-    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev93271+g36e1633e-py3-none-win32.whl", hash = "sha256:921e57935c420070bad6ef9a7f482462558ca657b4385821fc63480756ae992c" },
-    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev93271+g36e1633e-py3-none-win_amd64.whl", hash = "sha256:ab7ee4609a82ef76096a2cd4e8598e7809a7350b1bcef452a052e8140ff27db6" },
+    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev94237+gf95ccbae-py3-none-macosx_11_0_arm64.whl", hash = "sha256:d375d8d5d810a1d31d945b87235da5e47e4abdc6a37e8361ba9d420d6a68d816" },
+    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev94237+gf95ccbae-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:083f50e9291754a8b2865fb107529e1476c5d9d431c949d6beac35fb4007baa2" },
+    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev94237+gf95ccbae-py3-none-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:9893a6d61f76cb61e7c8f7e1805ab95b688878075aff631b4dad434e955fee0c" },
+    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev94237+gf95ccbae-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:eeee6efc2cd906de2276429540b006545e9b9291cb530edf5f2340c0e83286e3" },
+    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev94237+gf95ccbae-py3-none-manylinux_2_28_i686.whl", hash = "sha256:b54621e43db09416d708cc68b76cb5187ca755a520814fd3332dd06ee2e68979" },
+    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev94237+gf95ccbae-py3-none-manylinux_2_31_armv7l.whl", hash = "sha256:b1096a12462bc544d0f0625589266d26b0a393f42dc6859597046487540662e0" },
+    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev94237+gf95ccbae-py3-none-win32.whl", hash = "sha256:b6971a9c01b25cf6d3930429cc5dd9577724f17c8ea9a5955c9def01ef2debd4" },
+    { url = "https://pypi.halide-lang.org/packages/halide_llvm-23.0.0.dev94237+gf95ccbae-py3-none-win_amd64.whl", hash = "sha256:2e1c4e0d58adcf88d2ee1eecc1399dead2c18fc8c3ab1d48918b56ca5e119513" },
 ]
 
 [[package]]
@@ -951,7 +951,7 @@ wheels = [
 
 [[package]]
 name = "pytest"
-version = "9.0.2"
+version = "9.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "(platform_machine != 'armv7l' and platform_machine != 'armv8l' and sys_platform == 'win32') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-21') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-22' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-21') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-22' and extra == 'group-6-halide-ci-llvm-main') or (sys_platform != 'win32' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-21') or (sys_platform != 'win32' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-22') or (sys_platform != 'win32' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-main') or (sys_platform != 'win32' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-22') or (sys_platform != 'win32' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-main') or (sys_platform != 'win32' and extra == 'group-6-halide-ci-llvm-22' and extra == 'group-6-halide-ci-llvm-main')" },
@@ -962,9 +962,9 @@ dependencies = [
     { name = "pygments", marker = "(platform_machine != 'armv7l' and platform_machine != 'armv8l') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-21') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-22' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-21') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-22' and extra == 'group-6-halide-ci-llvm-main')" },
     { name = "tomli", marker = "(python_full_version < '3.11' and platform_machine != 'armv7l' and platform_machine != 'armv8l') or (python_full_version >= '3.11' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-21') or (python_full_version >= '3.11' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-22') or (python_full_version >= '3.11' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-main') or (python_full_version >= '3.11' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-22') or (python_full_version >= '3.11' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-main') or (python_full_version >= '3.11' and extra == 'group-6-halide-ci-llvm-22' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-21') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv7l' and extra == 'group-6-halide-ci-llvm-22' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-21') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-20' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-22') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-21' and extra == 'group-6-halide-ci-llvm-main') or (platform_machine == 'armv8l' and extra == 'group-6-halide-ci-llvm-22' and extra == 'group-6-halide-ci-llvm-main')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/db/7ef3487e0fb0049ddb5ce41d3a49c235bf9ad299b6a25d5780a89f19230f/pytest-9.0.2.tar.gz", hash = "sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11", size = 1568901, upload-time = "2025-12-06T21:30:51.014Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/0d/549bd94f1a0a402dc8cf64563a117c0f3765662e2e668477624baeec44d5/pytest-9.0.3.tar.gz", hash = "sha256:b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c", size = 1572165, upload-time = "2026-04-07T17:16:18.027Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/ab/b3226f0bd7cdcf710fbede2b3548584366da3b19b5021e74f5bde2a8fa3f/pytest-9.0.2-py3-none-any.whl", hash = "sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b", size = 374801, upload-time = "2025-12-06T21:30:49.154Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/24/a372aaf5c9b7208e7112038812994107bc65a84cd00e0354a88c2c77a617/pytest-9.0.3-py3-none-any.whl", hash = "sha256:2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9", size = 375249, upload-time = "2026-04-07T17:16:16.13Z" },
 ]
 
 [[package]]
