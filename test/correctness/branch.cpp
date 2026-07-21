@@ -865,6 +865,93 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Part AH3: gated reverse-over-forward. Plain reverse mode differentiates
+    // BOTH branch arms and masks the result with a select, so where one arm is
+    // taken the other arm's derivative is still formed - and deriv*0 = NaN if
+    // that arm is undefined there. Combining per-arm tangents with a branch
+    // instead (each arm's derivative INLINE in its own side) differentiates only
+    // the taken side: the untaken arm's derivative is in the other branch case
+    // and is never evaluated for that point. NaN-free and no wasted work - which
+    // is what makes an analytic-SDF adjoint tractable.
+    {
+        Var xx("xx");
+        // Each arm is only finite in its own region: sqrt of a negative is NaN
+        // in the other region. The forward branch is finite because it never
+        // takes the bad side. The per-p tangents are sqrt(5-xx) and sqrt(xx-5).
+        auto make_arms = [&](const Param<float> &p) {
+            Func coA("coA"), coB("coB");
+            coA(xx) = p * sqrt(cast<float>(5 - xx));  // finite xx<5, NaN xx>=5
+            coB(xx) = p * sqrt(cast<float>(xx - 5));  // finite xx>=5, NaN xx<5
+            return std::make_pair(coA, coB);
+        };
+
+        // Plain reverse mode forms dcoA/dp * select(cond, adj, 0) = NaN*0 -> NaN.
+        float g_plain;
+        {
+            Param<float> p("pp");
+            p.set(1.0f);
+            auto arms = make_arms(p);
+            Func fwd("fwd_plain");
+            fwd(xx) = branch(xx < 5, arms.first(xx), arms.second(xx));
+            arms.first.compute_at(fwd, xx);
+            arms.second.compute_at(fwd, xx);
+            fwd.compute_root();
+            RDom r(0, 10);
+            Func loss("loss_plain");
+            loss() = sum(fwd(r) * fwd(r));
+            loss.compute_root();
+            Buffer<float> g = propagate_adjoints(loss)(p).realize();
+            g_plain = g();
+        }
+
+        // Gated reverse-over-forward: dL/dfwd from reverse mode (clean - no arm
+        // derivatives), per-arm tangents from forward mode left INLINE so each
+        // one lands inside its own branch case and is only evaluated there.
+        float g_gated;
+        Module m_gated(std::string{}, get_host_target());
+        {
+            Param<float> p("pg");
+            p.set(1.0f);
+            auto arms = make_arms(p);
+            Func fwd("fwd_gated");
+            fwd(xx) = branch(xx < 5, arms.first(xx), arms.second(xx));
+            arms.first.compute_at(fwd, xx);
+            arms.second.compute_at(fwd, xx);
+            fwd.compute_root();
+            RDom r(0, 10);
+            Func loss("loss_gated");
+            loss() = sum(fwd(r) * fwd(r));
+            loss.compute_root();
+            Func dfwd = propagate_adjoints(loss)(fwd);  // dL/dfwd (clean)
+            dfwd.compute_root();
+            Func dcoA = propagate_tangents(arms.first, p);   // d coA / dp, inline
+            Func dcoB = propagate_tangents(arms.second, p);  // d coB / dp, inline
+            Func grad("gated_grad");
+            grad() = 0.0f;
+            grad() += branch(r < 5, dfwd(r) * dcoA(r), dfwd(r) * dcoB(r));
+            m_gated = grad.compile_to_module({p}, "gated_grad");
+            Buffer<float> g = grad.realize();
+            g_gated = g();
+        }
+
+        // analytic: sum_{xx<5} 2(5-xx) + sum_{xx>=5} 2(xx-5) = 30 + 20 = 50
+        if (!std::isnan(g_plain)) {
+            printf("gated reverse-over-forward: expected plain reverse mode to be "
+                   "NaN (it differentiates both arms), got %f\n", g_plain);
+            return 1;
+        }
+        if (std::abs(g_gated - 50.0f) > 1e-3f) {
+            printf("gated reverse-over-forward: expected 50, got %f\n", g_gated);
+            return 1;
+        }
+        // The scatter must be real control flow (each arm's derivative gated into
+        // its own case), not a select over both arms.
+        if (count_real_branches(m_gated) < 1) {
+            printf("gated grad did not lower to a real branch\n");
+            return 1;
+        }
+    }
+
 #ifdef HALIDE_WITH_EXCEPTIONS
     // Part H: a lane-varying (vector) condition is rejected at construction.
     {
