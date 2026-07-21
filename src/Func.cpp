@@ -24,6 +24,7 @@
 #include "IRMutator.h"
 #include "IROperator.h"
 #include "IRPrinter.h"
+#include "IRVisitor.h"
 #include "ImageParam.h"
 #include "LLVM_Output.h"
 #include "Lower.h"
@@ -3202,6 +3203,16 @@ vector<Expr> FuncRef::args_with_implicit_vars(const vector<Expr> &exprs) const {
 
 Stage FuncRef::operator=(const Expr &e) {
     return (*this) = Tuple(e);
+}
+
+Stage FuncRef::operator=(const Branch &b) {
+    // The branch is kept as an intrinsic in the definition's value. It is turned
+    // into real control flow (a point-wise IfThenElse, hoisted to the loop level
+    // where its condition is invariant) in ScheduleFunctions, so that producers
+    // can be compute_at'd inside the branch and have their computation gated by
+    // it. We deliberately do NOT force-inline the arms: that would take away the
+    // user's ability to schedule them.
+    return (*this) = b.expr;
 }
 
 Stage FuncRef::operator=(const Tuple &e) {

@@ -274,6 +274,19 @@ Expr diff_call(const Call *op, ForwardDiffContext &ctx,
             // Bitwise operations are piecewise constant on the integers;
             // they carry no gradient.
             return make_zero(op->type);
+        } else if (op->is_intrinsic(Call::branch)) {
+            // branch(cond, a, b) has the same tangent as select(cond, a, b) -
+            // the condition is not differentiated, so the tangent follows the
+            // taken side: d/dp branch(cond, a, b) = branch(cond, da, db). We
+            // deliberately keep this a branch (not a select) so the tangent
+            // also evaluates only one side. Branch is not an Expr, so we build
+            // the raw intrinsic; as the whole right-hand side of a tangent Func
+            // it becomes a real control-flow branch in ScheduleFunctions.
+            internal_assert(op->args.size() == 3);
+            Expr dt = diff_expr(op->args[1], ctx, partial_cache);
+            Expr df = diff_expr(op->args[2], ctx, partial_cache);
+            return Call::make(op->type, Call::branch, {op->args[0], dt, df},
+                              Call::PureIntrinsic);
         } else {
             user_warning << "propagate_tangents: dropping derivative at intrinsic '"
                         << op->name << "'\n";
