@@ -149,6 +149,21 @@ BranchArmProduce arm_produce(const Module &m, const std::string &name) {
     return v;
 }
 
+// True if some Load has a non-trivial predicate, i.e. it became a predicated
+// (masked) load rather than an unconditional one.
+class HasPredicatedLoad : public IRVisitor {
+    using IRVisitor::visit;
+    void visit(const Load *op) override {
+        if (!is_const_one(op->predicate)) {
+            found = true;
+        }
+        IRVisitor::visit(op);
+    }
+
+public:
+    bool found = false;
+};
+
 // True if a real branch appears nested inside any For loop.
 class BranchInsideAnyLoop : public IRVisitor {
     using IRVisitor::visit;
@@ -356,20 +371,20 @@ int main(int argc, char **argv) {
     // Part M: the branch is hoisted out of loops its condition does not use,
     // and is NOT hoisted when the condition uses the innermost loop var.
     {
-        Func fo("hoist_outer");
-        fo(x, y) = branch(y < 8, x + y, x - y);  // condition uses only y
-        Module mo = fo.compile_to_module({}, "hoist_outer");
+        Func f_outer("hoist_outer");
+        f_outer(x, y) = branch(y < 8, x + y, x - y);  // condition uses only y
+        Module m_outer = f_outer.compile_to_module({}, "hoist_outer");
         BranchAboveLoop above;
-        if (!scan_module(mo, above)) {
+        if (!scan_module(m_outer, above)) {
             printf("branch was not hoisted above the inner loop\n");
             return 1;
         }
 
-        Func fi("hoist_inner");
-        fi(x, y) = branch(x < 8, x + y, x - y);  // condition uses innermost var
-        Module mi = fi.compile_to_module({}, "hoist_inner");
+        Func f_inner("hoist_inner");
+        f_inner(x, y) = branch(x < 8, x + y, x - y);  // condition uses innermost var
+        Module m_inner = f_inner.compile_to_module({}, "hoist_inner");
         BranchAboveLoop above2;
-        if (scan_module(mi, above2)) {
+        if (scan_module(m_inner, above2)) {
             printf("branch was hoisted out of a loop its condition uses\n");
             return 1;
         }
@@ -736,34 +751,9 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Part AF: forward-mode (JVP) autodiff. The tangent of a branch follows the
-    // same branch: d/dp branch(cond, a, b) = branch(cond, da, db). It must match
-    // the select-based tangent numerically.
-    {
-        Param<float> p("pj");
-        p.set(3.0f);
-        Var xx("xx");
-        Expr cond = xx < 5;
-        Expr a = p * cast<float>(xx);  // da/dp = xx
-        Expr b = p * p;                // db/dp = 2p
-        Func fs("jvp_sel"), fb("jvp_br");
-        fs(xx) = select(cond, a, b);
-        fb(xx) = branch(cond, a, b);
-        Func dfs = propagate_tangents(fs, p);
-        Func dfb = propagate_tangents(fb, p);
-        Buffer<float> rs = dfs.realize({10});
-        Buffer<float> rb = dfb.realize({10});
-        for (int i = 0; i < 10; i++) {
-            if (std::abs(rs(i) - rb(i)) > 1e-4f) {
-                printf("JVP tangent mismatch at %d: select=%f branch=%f\n",
-                       i, rs(i), rb(i));
-                return 1;
-            }
-        }
-    }
-
-    // Part AG: reverse-mode (VJP) autodiff. The gradient through a branch must
-    // match the gradient through the equivalent select.
+    // Part AF: reverse-mode (VJP) autodiff, the default Halide autodiff. The
+    // gradient through a branch must match the gradient through the equivalent
+    // select.
     {
         Param<float> p("pv");
         p.set(3.0f);
@@ -917,76 +907,55 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Part AH-ad: autodiff through a compound branch update. f += branch(cond,a,b)
-    // is a branch-valued update f = branch(cond, f+a, f+b), semantically identical
-    // to f += select(cond,a,b), so both VJP and JVP must give the same result as
-    // the select version. Covers the self-reference-in-both-arms case.
+    // Part AH-ad: reverse-mode (VJP) through a compound branch update.
+    // f += branch(cond,a,b) is a branch-valued update f = branch(cond, f+a, f+b),
+    // semantically identical to f += select(cond,a,b), so the gradient must match
+    // the select version. Covers the self-reference-in-both-arms case. (This
+    // branch is VJP-only; the JVP counterpart lives on the forward-diff branch.)
     {
-        auto reduce_grad = [&](bool use_branch, bool jvp) -> float {
+        auto reduce_grad = [&](bool use_branch) -> float {
             Param<float> p("adp");
             p.set(3.0f);
             RDom r(0, 10);
-            std::string nm = std::string(use_branch ? "adb" : "ads") + (jvp ? "j" : "v");
-            Func f(nm);
+            Func f(use_branch ? "adbv" : "adsv");
             f() = 0.0f;
             if (use_branch) {
                 f() += branch(r < 5, p * cast<float>(r), p * p);
             } else {
                 f() += select(r < 5, p * cast<float>(r), p * p);
             }
-            if (jvp) {
-                Buffer<float> d = propagate_tangents(f, p).realize();
-                return d();
-            }
             Buffer<float> d = propagate_adjoints(f)(p).realize();
             return d();
         };
         // f = sum_{r<5} p r + sum_{r>=5} p^2 = 10p + 5p^2; df/dp = 10 + 10p = 40 at p=3.
-        float vjp_s = reduce_grad(false, false), vjp_b = reduce_grad(true, false);
-        float jvp_s = reduce_grad(false, true), jvp_b = reduce_grad(true, true);
+        float vjp_s = reduce_grad(false), vjp_b = reduce_grad(true);
         if (std::abs(vjp_b - vjp_s) > 1e-3f || std::abs(vjp_b - 40.0f) > 1e-3f) {
             printf("VJP through += branch: select=%f branch=%f (want 40)\n", vjp_s, vjp_b);
             return 1;
         }
-        if (std::abs(jvp_b - jvp_s) > 1e-3f || std::abs(jvp_b - 40.0f) > 1e-3f) {
-            printf("JVP through += branch: select=%f branch=%f (want 40)\n", jvp_s, jvp_b);
-            return 1;
-        }
 
-        // Product reduction (*=), where the derivative is the product rule:
-        // f = prod over r in [0,3) of (r<2 ? p : 2) = p*p*2 = 2 p^2; df/dp = 4p = 12.
-        auto prod_grad = [&](bool use_branch, bool jvp) -> float {
+        // Product reduction (*=), where the derivative is the product rule.
+        // The branch operator only has to be faithful to the select version:
+        // Halide's own reverse-mode AD of a self-referencing product scan is
+        // unreliable (it does not match the analytic gradient) for BOTH select
+        // and branch, so we only assert branch == select.
+        auto prod_grad = [&](bool use_branch) -> float {
             Param<float> p("mdp");
             p.set(3.0f);
             RDom r(0, 3);
-            std::string nm = std::string(use_branch ? "mdb" : "mds") + (jvp ? "j" : "v");
-            Func f(nm);
+            Func f(use_branch ? "mdbv" : "mdsv");
             f() = 1.0f;
             if (use_branch) {
                 f() *= branch(r < 2, p, 2.0f);
             } else {
                 f() *= select(r < 2, p, 2.0f);
             }
-            if (jvp) {
-                Buffer<float> d = propagate_tangents(f, p).realize();
-                return d();
-            }
             Buffer<float> d = propagate_adjoints(f)(p).realize();
             return d();
         };
-        float pv_s = prod_grad(false, false), pv_b = prod_grad(true, false);
-        float pj_s = prod_grad(false, true), pj_b = prod_grad(true, true);
-        // The branch operator only has to be faithful to the select version. NOTE:
-        // Halide's own AD of a self-referencing product scan is unreliable here -
-        // it gives VJP=36 and JVP=144 (they disagree, and neither is the analytic
-        // 12) for BOTH select and branch. That is a pre-existing Halide limitation,
-        // not something branch introduces; we only assert branch == select.
+        float pv_s = prod_grad(false), pv_b = prod_grad(true);
         if (std::abs(pv_b - pv_s) > 1e-3f) {
             printf("VJP through *= branch not faithful: select=%f branch=%f\n", pv_s, pv_b);
-            return 1;
-        }
-        if (std::abs(pj_b - pj_s) > 1e-3f) {
-            printf("JVP through *= branch not faithful: select=%f branch=%f\n", pj_s, pj_b);
             return 1;
         }
     }
@@ -1026,90 +995,61 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Part AH3: gated reverse-over-forward. Plain reverse mode differentiates
-    // BOTH branch arms and masks the result with a select, so where one arm is
-    // taken the other arm's derivative is still formed - and deriv*0 = NaN if
-    // that arm is undefined there. Combining per-arm tangents with a branch
-    // instead (each arm's derivative INLINE in its own side) differentiates only
-    // the taken side: the untaken arm's derivative is in the other branch case
-    // and is never evaluated for that point. NaN-free and no wasted work - which
-    // is what makes an analytic-SDF adjoint tractable.
+    // Part AI: a condition that varies across the lanes of a vectorized
+    // dimension can not be a scalar jump. Rather than erroring, it becomes
+    // predication: the loads and stores of each arm are masked. Only the values
+    // have to be right here; the masking itself is checked in Part AJ.
     {
-        Var xx("xx");
-        // Each arm is only finite in its own region: sqrt of a negative is NaN
-        // in the other region. The forward branch is finite because it never
-        // takes the bad side. The per-p tangents are sqrt(5-xx) and sqrt(xx-5).
-        auto make_arms = [&](const Param<float> &p) {
-            Func coA("coA"), coB("coB");
-            coA(xx) = p * sqrt(cast<float>(5 - xx));  // finite xx<5, NaN xx>=5
-            coB(xx) = p * sqrt(cast<float>(xx - 5));  // finite xx>=5, NaN xx<5
-            return std::make_pair(coA, coB);
-        };
+        Func f("vec_branch");
+        f(x) = branch(x < 5, x * 2, x + 1);
+        f.vectorize(x, 8);
 
-        // Plain reverse mode forms dcoA/dp * select(cond, adj, 0) = NaN*0 -> NaN.
-        float g_plain;
-        {
-            Param<float> p("pp");
-            p.set(1.0f);
-            auto arms = make_arms(p);
-            Func fwd("fwd_plain");
-            fwd(xx) = branch(xx < 5, arms.first(xx), arms.second(xx));
-            arms.first.compute_at(fwd, xx);
-            arms.second.compute_at(fwd, xx);
-            fwd.compute_root();
-            RDom r(0, 10);
-            Func loss("loss_plain");
-            loss() = sum(fwd(r) * fwd(r));
-            loss.compute_root();
-            Buffer<float> g = propagate_adjoints(loss)(p).realize();
-            g_plain = g();
+        Buffer<int> r = f.realize({64});
+        for (int i = 0; i < r.width(); i++) {
+            int correct = i < 5 ? (i * 2) : (i + 1);
+            if (r(i) != correct) {
+                printf("vectorized branch mismatch at %d: got %d want %d\n",
+                       i, r(i), correct);
+                return 1;
+            }
+        }
+    }
+
+    // Part AJ: the boundary-condition case. A branch on a vectorized dimension
+    // whose arm loads from an input becomes a PREDICATED (masked) vector load,
+    // so the out-of-bounds lanes never touch memory. unsafe_promise_clamped is
+    // what tells bounds inference the index stays in range, so `in` is not
+    // required outside its real extent. On AVX-512 this is a single masked load
+    // instead of a clamp plus a select.
+    {
+        const int w = 100;
+        Buffer<int> in(w);
+        for (int i = 0; i < w; i++) {
+            in(i) = i * 3 + 1;
         }
 
-        // Gated reverse-over-forward: dL/dfwd from reverse mode (clean - no arm
-        // derivatives), per-arm tangents from forward mode left INLINE so each
-        // one lands inside its own branch case and is only evaluated there.
-        float g_gated;
-        Module m_gated(std::string{}, get_host_target());
-        {
-            Param<float> p("pg");
-            p.set(1.0f);
-            auto arms = make_arms(p);
-            Func fwd("fwd_gated");
-            fwd(xx) = branch(xx < 5, arms.first(xx), arms.second(xx));
-            arms.first.compute_at(fwd, xx);
-            arms.second.compute_at(fwd, xx);
-            fwd.compute_root();
-            RDom r(0, 10);
-            Func loss("loss_gated");
-            loss() = sum(fwd(r) * fwd(r));
-            loss.compute_root();
-            Func dfwd = propagate_adjoints(loss)(fwd);  // dL/dfwd (clean)
-            dfwd.compute_root();
-            Func dcoA = propagate_tangents(arms.first, p);   // d coA / dp, inline
-            Func dcoB = propagate_tangents(arms.second, p);  // d coB / dp, inline
-            Func grad("gated_grad");
-            grad() = 0.0f;
-            grad() += branch(r < 5, dfwd(r) * dcoA(r), dfwd(r) * dcoB(r));
-            m_gated = grad.compile_to_module({p}, "gated_grad");
-            Buffer<float> g = grad.realize();
-            g_gated = g();
+        Func f("pred_bc");
+        f(x) = branch(x >= 0 && x < w,
+                      in(unsafe_promise_clamped(x, 0, w - 1)),
+                      0);
+        f.vectorize(x, 16);
+
+        Module m = f.compile_to_module({}, "pred_bc");
+        HasPredicatedLoad hpl;
+        if (!scan_module(m, hpl)) {
+            printf("vectorized branch did not produce a predicated load\n");
+            return 1;
         }
 
-        // analytic: sum_{xx<5} 2(5-xx) + sum_{xx>=5} 2(xx-5) = 30 + 20 = 50
-        if (!std::isnan(g_plain)) {
-            printf("gated reverse-over-forward: expected plain reverse mode to be "
-                   "NaN (it differentiates both arms), got %f\n", g_plain);
-            return 1;
-        }
-        if (std::abs(g_gated - 50.0f) > 1e-3f) {
-            printf("gated reverse-over-forward: expected 50, got %f\n", g_gated);
-            return 1;
-        }
-        // The scatter must be real control flow (each arm's derivative gated into
-        // its own case), not a select over both arms.
-        if (count_real_branches(m_gated) < 1) {
-            printf("gated grad did not lower to a real branch\n");
-            return 1;
+        // Realize past the end of `in`: the guarded lanes must not load.
+        Buffer<int> r = f.realize({128});
+        for (int i = 0; i < r.width(); i++) {
+            int correct = (i < w) ? (i * 3 + 1) : 0;
+            if (r(i) != correct) {
+                printf("predicated boundary mismatch at %d: got %d want %d\n",
+                       i, r(i), correct);
+                return 1;
+            }
         }
     }
 
@@ -1128,19 +1068,46 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Part I: a condition that depends on a vectorized dimension is rejected.
+    // Part AK: an undefined condition is rejected at construction.
     {
-        Func f("vec_branch");
-        f(x) = branch(x < 5, x * 2, x + 1);
-        f.vectorize(x, 8);
         bool threw = false;
         try {
-            f.compile_to_module({}, "vec_branch");
+            (void)branch(Expr(), x * 2, x + 1);
         } catch (const CompileError &) {
             threw = true;
         }
         if (!threw) {
-            printf("branch() on a vectorized dimension should have thrown\n");
+            printf("branch() with an undefined condition should have thrown\n");
+            return 1;
+        }
+    }
+
+    // Part AL: a non-boolean condition is rejected at construction.
+    {
+        bool threw = false;
+        try {
+            (void)branch(x, x * 2, x + 1);  // x is an int, not a bool
+        } catch (const CompileError &) {
+            threw = true;
+        }
+        if (!threw) {
+            printf("branch() with a non-boolean condition should have thrown\n");
+            return 1;
+        }
+    }
+
+    // Part AM: the two arms must have a matching type. Only int literals are
+    // coerced to the type of the other arm (like select), so a float arm and an
+    // int arm is an error rather than a silent promotion.
+    {
+        bool threw = false;
+        try {
+            (void)branch(x < 5, cast<float>(x), x);
+        } catch (const CompileError &) {
+            threw = true;
+        }
+        if (!threw) {
+            printf("branch() with mismatched arm types should have thrown\n");
             return 1;
         }
     }
@@ -1175,8 +1142,8 @@ int main(int argc, char **argv) {
         bool threw = false;
         try {
             Func f("tuple_branch");
-            f(x) = Tuple(0, 1);                // two values
-            f(x) = branch(x < 5, 100, 200);    // branch gives one -> mismatch
+            f(x) = Tuple(0, 1);              // two values
+            f(x) = branch(x < 5, 100, 200);  // branch gives one -> mismatch
             f.realize({10});
         } catch (const CompileError &) {
             threw = true;

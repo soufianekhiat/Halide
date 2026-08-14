@@ -1199,11 +1199,10 @@ void ReverseAccumulationVisitor::visit(const Call *op) {
             // adjoint through a branch does not gate the arm derivatives - both
             // still get computed (dcoA * branch(cond, adj, 0) keeps dcoA on the
             // zero side). It would only duplicate the adjoint IR (both arms in each
-            // side, since deriv*0 can not be simplified for floats) with no
-            // gain. True gating of an arm's adjoint needs the arm to be its own
-            // Func; the forward branch itself is still kept as control flow (its
-            // recompute for the backward pass is lifted in ScheduleFunctions), and
-            // the tangent (JVP) keeps the branch as a whole Func value.
+            // side, since deriv*0 can not be simplified for floats) with no gain.
+            // True gating of an arm's adjoint needs the arm to be its own Func; the
+            // forward branch itself is still kept as control flow (its recompute
+            // for the backward pass is lifted in ScheduleFunctions).
             internal_assert(op->args.size() == 3);
             accumulate(op->args[1],
                        select(op->args[0], adjoint, make_zero(op->type)));
