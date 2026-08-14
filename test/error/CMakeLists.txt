@@ -22,6 +22,8 @@ tests(
     bad_const_cast.cpp
     bad_device_api.cpp
     bad_dimensions.cpp
+    bad_eager_inline.cpp
+    bad_eager_inline_undefined.cpp
     bad_extern_split.cpp
     bad_fold.cpp
     bad_func_object.cpp
@@ -59,6 +61,7 @@ tests(
     extern_func_self_argument.cpp
     five_d_gpu_buffer.cpp
     float_arg.cpp
+    fold_storage_not_applied.cpp
     forward_on_undefined_buffer.cpp
     func_expr_dim_mismatch.cpp
     func_expr_type_mismatch.cpp
@@ -68,9 +71,12 @@ tests(
     func_tuple_dim_mismatch.cpp
     func_tuple_types_mismatch.cpp
     func_tuple_update_types_mismatch.cpp
+    fuse_same_var.cpp
     fuse_vectorized_var_with_rvar.cpp
     hoist_storage_extern.cpp
+    hoist_storage_root_without_compute_root.cpp
     hoist_storage_without_compute_at.cpp
+    host_inside_gpu_loop.cpp
     implicit_args.cpp
     impossible_constraints.cpp
     incomplete_target.cpp
@@ -87,11 +93,13 @@ tests(
     memoize_redefine_eviction_key.cpp
     metal_threads_too_large.cpp
     metal_vector_too_large.cpp
+    mismatch_runtime_streaming_vscale.cpp
     mismatch_runtime_vscale.cpp
     missing_args.cpp
     no_default_device.cpp
     nonexistent_update_stage.cpp
     null_host_field.cpp
+    output_func_input_buffer_name_collision.cpp
     overflow_during_constant_folding.cpp
     pointer_arithmetic.cpp
     predicate_loads_used_in_inner_splits.cpp
@@ -110,12 +118,17 @@ tests(
     rfactor_inner_dim_non_commutative.cpp
     round_up_and_blend_race.cpp
     run_with_large_stack_throws.cpp
+    rvar_fuse_reorder.cpp
     shift_inwards_and_blend_race.cpp
+    sme_streaming_without_target_feature.cpp
     specialize_fail.cpp
     split_inner_wrong_tail_strategy.cpp
     split_non_innermost_predicated.cpp
     split_same_var_names.cpp
     store_at_without_compute_at.cpp
+    store_root_without_compute_root.cpp
+    stream_loads_illegal_self.cpp
+    stream_stores_illegal_rvar.cpp
     thread_id_outside_block_id.cpp
     too_many_args.cpp
     treat_rvar_as_var.cpp
@@ -134,6 +147,7 @@ tests(
     uninitialized_param.cpp
     uninitialized_param_2.cpp
     unknown_target.cpp
+    update_after_wrap.cpp
     vector_tile.cpp
     vectorize_dynamic.cpp
     vectorize_too_little.cpp

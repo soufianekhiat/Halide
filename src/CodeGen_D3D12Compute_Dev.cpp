@@ -1094,7 +1094,7 @@ void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::visit(const Store *op) {
 
         // Detect atomic add: value = load + delta where delta is independent of the buffer.
         Expr equiv_load = Load::make(t, op->name, op->index, Buffer<>(),
-                                     op->param, op->predicate, op->alignment);
+                                     op->param, op->predicate, op->alignment, false);
         Expr delta = simplify(common_subexpression_elimination(op->value - equiv_load));
         bool is_atomic_add = !expr_uses_var(delta, op->name);
 
@@ -1406,7 +1406,7 @@ void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::visit(const Select *op) {
 }
 
 bool is_shared_allocation(const Allocate *op) {
-    return op->memory_type == MemoryType::GPUShared;
+    return is_gpu_shared(op->memory_type);
 }
 
 void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::visit(const Allocate *op) {
@@ -1803,7 +1803,7 @@ void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::add_kernel(Stmt s,
             if (it != replacements.end()) {
                 return Load::make(op->type, it->second,
                                   mutate(op->index), op->image, op->param,
-                                  mutate(op->predicate), op->alignment);
+                                  mutate(op->predicate), op->alignment, op->is_streaming);
             } else {
                 return IRMutator::visit(op);
             }
@@ -1814,7 +1814,7 @@ void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::add_kernel(Stmt s,
             if (it != replacements.end()) {
                 return Store::make(it->second, mutate(op->value),
                                    mutate(op->index), op->param,
-                                   mutate(op->predicate), op->alignment);
+                                   mutate(op->predicate), op->alignment, op->is_streaming);
             } else {
                 return IRMutator::visit(op);
             }
@@ -1931,7 +1931,7 @@ void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::add_kernel(Stmt s,
                 if (it != renames.end()) {
                     return Load::make(op->type, it->second,
                                       mutate(op->index), op->image, op->param,
-                                      mutate(op->predicate), op->alignment);
+                                      mutate(op->predicate), op->alignment, op->is_streaming);
                 }
                 return IRMutator::visit(op);
             }
@@ -1940,7 +1940,7 @@ void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::add_kernel(Stmt s,
                 if (it != renames.end()) {
                     return Store::make(it->second, mutate(op->value),
                                        mutate(op->index), op->param,
-                                       mutate(op->predicate), op->alignment);
+                                       mutate(op->predicate), op->alignment, op->is_streaming);
                 }
                 return IRMutator::visit(op);
             }
@@ -1973,8 +1973,7 @@ void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::add_kernel(Stmt s,
                             for (size_t i = 1; i < new_args.size(); ++i) {
                                 new_args[i] = mutate(new_args[i]);
                             }
-                            return Call::make(op->type, op->name, new_args, op->call_type,
-                                              op->func, op->value_index, op->image, op->param);
+                            return op->with(new_args);
                         }
                     }
                 }

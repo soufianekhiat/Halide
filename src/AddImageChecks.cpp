@@ -39,7 +39,8 @@ public:
         op->max.accept(this);
         bool old = in_device_loop;
         if (op->device_api != DeviceAPI::None &&
-            op->device_api != DeviceAPI::Host) {
+            op->device_api != DeviceAPI::Host &&
+            op->device_api != DeviceAPI::SMEStreaming) {
             in_device_loop = true;
         }
         op->body.accept(this);
@@ -330,7 +331,7 @@ Stmt add_image_checks_inner(Stmt s,
         {
             string type_name = name + ".type";
             Expr type_var = Variable::make(UInt(32), type_name, image, param, rdom);
-            uint32_t correct_type_bits = ((halide_type_t)type).as_u32();
+            uint32_t correct_type_bits = type.to_abi();
             Expr correct_type_expr = make_const(UInt(32), correct_type_bits);
             Expr error = Call::make(Int(32), "halide_error_bad_type",
                                     {error_name, type_var, correct_type_expr},
@@ -709,9 +710,11 @@ Stmt add_image_checks_inner(Stmt s,
     // all in reverse order compared to execution, as we incrementally
     // prepending code.
 
-    // Inject the code that checks the constraints are correct.
-    prepend_stmts(&asserts_constrained);
+    // Inject the buffer constraints before the required-region checks so that
+    // simplification can use the constraints when reasoning about the checks.
+    // These calls are in reverse execution order because they prepend stmts.
     prepend_stmts(&asserts_required);
+    prepend_stmts(&asserts_constrained);
     prepend_stmts(&asserts_type_checks);
 
     // Inject the code that returns early for inference mode.
